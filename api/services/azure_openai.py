@@ -163,3 +163,36 @@ class AzureOpenAIService:
         except Exception as e:
             logger.error(f"Follow-up question generation failed: {e}")
             return "Thank you for sharing that. How are you feeling overall with your recovery?"
+    
+    async def generate_acknowledgment_response(self, user_input: str, medical_context: List[Dict] = None) -> str:
+        """Generate acknowledgment response when moving to next question"""
+        try:
+            context_text = ""
+            if medical_context:
+                context_text = f"\nMedical context: {json.dumps(medical_context, indent=2)}"
+            
+            messages = [
+                {
+                    "role": "system",
+                    "content": f"""You are a medical AI assistant. Generate a brief acknowledgment of the patient's response before moving to the next question.
+                    Be empathetic and professional. Keep it concise and natural.
+                    {context_text}"""
+                },
+                {
+                    "role": "user",
+                    "content": f"Patient said: {user_input}"
+                }
+            ]
+            
+            response = await self.client.chat.completions.create(
+                model=self.gpt4o_deployment,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=100
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.error(f"Acknowledgment response generation failed: {e}")
+            return "Thank you for sharing that information."

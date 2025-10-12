@@ -122,7 +122,8 @@ class EnhancedDialog:
                 if item.get("type") != "section" and not item.get("section"):
                     questions_answered += 1
             
-            return min(100.0, (questions_answered / total_questions) * 100)
+            progress = min(100.0, (questions_answered / total_questions) * 100)
+            return progress
         except Exception as e:
             logger.error(f"Progress calculation failed: {e}")
             return 0.0
@@ -148,8 +149,8 @@ class EnhancedDialog:
             # Update session context
             await self._update_session_context(user_input, current_question)
             
-            # Process based on mode
-            if self.mode == "rag_enhanced":
+            # Process based on mode and question type
+            if self.mode == "rag_enhanced" and current_question.get("type") != "confirm":
                 return await self._process_rag_enhanced(user_input, current_question)
             else:
                 return await self._process_guided(user_input, current_question)
@@ -193,28 +194,62 @@ class EnhancedDialog:
                 self.session_context["emergency_detected"] = True
                 return await self._handle_emergency_response(user_input, context)
             
-            # Generate RAG-enhanced response
-            rag_response = await self.openai.generate_rag_response(
-                user_input=user_input,
-                context=context["knowledge"]["general"],
-                system_prompt=self._build_rag_system_prompt(current_question, context)
-            )
+            # Check if we should limit follow-up questions
+            follow_up_count = self.responses.get(f"{current_question['key']}_followups", 0)
+            max_followups = 2  # Limit to 2 follow-up questions per main question
             
-            # Generate follow-up question
-            follow_up = await self.openai.generate_follow_up_question(
-                user_input=user_input,
-                current_question=current_question["prompt"],
-                medical_context=context["knowledge"]["general"]
-            )
-            
-            return {
-                "type": "rag_enhanced",
-                "message": follow_up,
-                "rag_response": rag_response,
-                "medical_context": context,
-                "next_action": "wait_for_response",
-                "confidence": rag_response["confidence"]
-            }
+            if follow_up_count < max_followups:
+                # Generate RAG-enhanced response with follow-up
+                rag_response = await self.openai.generate_rag_response(
+                    user_input=user_input,
+                    context=context["knowledge"]["general"],
+                    system_prompt=self._build_rag_system_prompt(current_question, context)
+                )
+                
+                # Generate follow-up question
+                follow_up = await self.openai.generate_follow_up_question(
+                    user_input=user_input,
+                    current_question=current_question["prompt"],
+                    medical_context=context["knowledge"]["general"]
+                )
+                
+                # Increment follow-up counter
+                self.responses[f"{current_question['key']}_followups"] = follow_up_count + 1
+                
+                return {
+                    "type": "rag_enhanced",
+                    "message": follow_up,
+                    "rag_response": rag_response,
+                    "medical_context": context,
+                    "next_action": "wait_for_response",
+                    "progress": self.get_progress_percentage()
+                }
+            else:
+                # Max follow-ups reached, advance to next question
+                logger.info(f"Max follow-ups reached for question {current_question['key']}, advancing to next question")
+                
+                # Generate acknowledgment response
+                acknowledgment = await self.openai.generate_acknowledgment_response(
+                    user_input=user_input,
+                    medical_context=context["knowledge"]["general"]
+                )
+                
+                # Advance to next question
+                if self.advance_to_next():
+                    next_question = self.get_current_question()
+                    if next_question:
+                        progress = self.get_progress_percentage()
+                        return {
+                            "type": "rag_enhanced",
+                            "message": f"{acknowledgment} {next_question['prompt']}",
+                            "rag_response": {"acknowledgment": acknowledgment},
+                            "medical_context": context,
+                            "next_action": "wait_for_response",
+                            "progress": progress
+                        }
+                
+                # No more questions, handle completion
+                return await self._handle_completion()
             
         except Exception as e:
             logger.error(f"RAG processing failed: {e}")
