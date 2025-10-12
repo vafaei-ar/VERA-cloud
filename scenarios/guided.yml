@@ -1,0 +1,75 @@
+meta:
+  organization: "PennState Health"
+  service_name: "AI stroke navigator - Guided Mode"
+  site: "Hershey Medical Center"
+  version: "2.0"
+  description: "Post-discharge stroke care follow-up assessment - Guided Mode"
+  mode: "guided"  # Traditional guided conversation
+
+greeting:
+  template: >
+    Good {timeofday} {honorific} {patient_name}. I'm an AI stroke navigator calling from {organization}.
+    I understand you recently had an ischemic stroke and received care at {site}.
+    My goal is to gently check in and see how you're doing since leaving the hospital.
+    With your permission, this call will be recorded to help document your care. 
+  variables:
+    - timeofday     # computed: morning/afternoon/evening
+    - honorific     # UI input: "Mr." or "Ms."
+    - patient_name  # UI input
+    - organization  # from meta
+    - site         # from meta
+
+flow:
+  - key: consent
+    type: confirm
+    prompt: "Do you consent to proceed with this recorded call?"
+    on_deny: >
+      Thank you for letting me know. We won't proceed today.
+      If this is an emergency, please call your local emergency number or 911.
+      If you'd like to speak with someone from our care team, please call the main hospital number.
+      Take care and have a good day.
+
+  - key: know_ischemic
+    type: confirm
+    prompt: "Just to make sure we're on the same page, are you familiar with what an ischemic stroke is?"
+    on_deny: >
+      An ischemic stroke happens when a blood vessel that brings blood to the brain is blocked.
+      This can damage brain cells. Knowing this can help make sense of your care plan.
+    on_affirm: "Thank you for letting me know. We'll move on."
+
+  - key: describe_condition
+    type: free
+    prompt: "In your own words, what do you understand about your condition? There's no right or wrong here. share whatever feels comfortable."
+
+  - section: "General Well-Being"
+  
+  - key: general_feeling
+    type: free
+    prompt: "How have you been feeling overall since your hospital discharge?"
+  
+  - key: new_symptoms
+    type: free
+    prompt: "Have you noticed any new or worsening symptoms since discharge? "
+
+wrapup:
+  message: >
+    Thank you for taking the time to speak with me today. I've recorded all of your responses, 
+    and a member of our clinical care team will review them and follow up with you if needed.
+    
+    Remember, if you experience any new stroke symptoms such as sudden weakness, speech problems, 
+    vision changes, severe headache, or loss of balance, call 911 immediately.
+    
+    For non-urgent questions, you can always contact your primary care provider or our stroke care team.
+    
+    Take care, and thank you again for your time. Goodbye.
+
+emergency_disclaimer: >
+  If you are experiencing a medical emergency or new stroke symptoms right now, 
+  please hang up and call 911 immediately.
+
+stroke_warning_signs:
+  - "Sudden weakness or numbness in face, arm, or leg, especially on one side"
+  - "Sudden confusion or trouble speaking or understanding speech"
+  - "Sudden trouble seeing in one or both eyes"
+  - "Sudden severe headache with no known cause"
+  - "Sudden trouble walking, dizziness, or loss of balance"

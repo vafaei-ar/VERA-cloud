@@ -1,0 +1,204 @@
+# Azure Cloud Configuration for VERA
+# This configuration replaces local models with Azure services
+
+app:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  environment: "production"
+  log_level: "INFO"
+
+# Azure OpenAI Configuration
+azure_openai:
+  endpoint: "${AZURE_OPENAI_ENDPOINT}"
+  api_key: "${AZURE_OPENAI_API_KEY}"
+  api_version: "2024-02-15-preview"
+  deployments:
+    whisper: "whisper"
+    gpt4o: "gpt-4o"
+    embedding: "text-embedding-3-small"
+  timeout: 30
+  max_retries: 3
+
+# Azure Speech Service Configuration
+azure_speech:
+  key: "${AZURE_SPEECH_KEY}"
+  region: "${AZURE_SPEECH_REGION}"
+  language: "en-US"
+  voices:
+    default: "en-US-AriaNeural"
+    available:
+      - "en-US-AriaNeural"
+      - "en-US-JennyNeural"
+      - "en-US-GuyNeural"
+      - "en-US-DavisNeural"
+      - "en-US-EmmaNeural"
+      - "en-US-BrianNeural"
+  tts:
+    output_format: "audio-16khz-32kbitrate-mono-mp3"
+    speaking_rate: 1.0
+    pitch: 0
+  stt:
+    enable_dictation: true
+    initial_silence_timeout_ms: 5000
+    end_silence_timeout_ms: 2000
+
+# Azure AI Search Configuration
+azure_search:
+  endpoint: "${AZURE_SEARCH_ENDPOINT}"
+  api_key: "${AZURE_SEARCH_API_KEY}"
+  index_name: "stroke-care-knowledge"
+  search_config:
+    max_results: 5
+    confidence_threshold: 0.7
+    enable_semantic_search: true
+    enable_vector_search: true
+  rag_config:
+    max_context_results: 3
+    context_fields: ["content", "title", "source", "category"]
+    emergency_detection: true
+
+# Redis Cache Configuration
+redis:
+  connection_string: "${REDIS_CONNECTION_STRING}"
+  ttl_seconds: 3600
+  ttl_embeddings: 86400  # 24 hours for embeddings
+  max_connections: 10
+  retry_attempts: 3
+  retry_delay: 1
+
+# Azure SignalR Configuration
+signalr:
+  connection_string: "${AZURE_SIGNALR_CONNECTION_STRING}"
+  hub_name: "vera_hub"
+  max_connections_per_user: 5
+
+# Azure Storage Configuration
+azure_storage:
+  connection_string: "${AZURE_STORAGE_CONNECTION_STRING}"
+  container_name: "vera-sessions"
+  blob_ttl_days: 30
+
+# Azure Container Apps Configuration
+container_apps:
+  environment: "${CONTAINER_APP_ENVIRONMENT}"
+  resource_group: "${RESOURCE_GROUP}"
+  subscription_id: "${SUBSCRIPTION_ID}"
+  scaling:
+    min_replicas: 1
+    max_replicas: 10
+    target_cpu: 70
+    target_memory: 80
+
+# Azure Monitor Configuration
+monitoring:
+  application_insights:
+    connection_string: "${APPLICATION_INSIGHTS_CONNECTION_STRING}"
+    enable_live_metrics: true
+    enable_profiler: true
+    enable_snapshot_debugger: true
+  log_analytics:
+    workspace_id: "${LOG_ANALYTICS_WORKSPACE_ID}"
+    shared_key: "${LOG_ANALYTICS_SHARED_KEY}"
+
+# Session Configuration
+session:
+  default_scenario: "guided.yml"
+  available_scenarios:
+    - "guided.yml"
+    - "rag_enhanced.yml"
+  session_timeout_minutes: 30
+  max_concurrent_sessions: 100
+  cleanup_interval_minutes: 5
+
+# Audio Processing Configuration
+audio:
+  sample_rate: 16000
+  channels: 1
+  bit_depth: 16
+  chunk_size_ms: 30
+  max_chunk_size: 4096
+  noise_reduction: true
+  echo_cancellation: true
+
+# VAD Configuration
+vad:
+  type: "azure_speech"  # Use Azure Speech VAD
+  sample_rate: 16000
+  frame_length_ms: 30
+  silence_duration_ms: 2000
+  max_speech_duration_ms: 30000
+  energy_threshold: 3.2
+
+# Dialog Configuration
+dialog:
+  mode: "guided"  # guided | rag_enhanced
+  fallback_mode: "guided"
+  emergency_detection: true
+  context_awareness: true
+  response_generation:
+    max_tokens: 200
+    temperature: 0.7
+    timeout_seconds: 10
+
+# Caching Configuration
+caching:
+  tts_cache: true
+  rag_cache: true
+  search_cache: true
+  session_cache: true
+  cache_warmup: true
+  cache_stats: true
+
+# Security Configuration
+security:
+  enable_https: true
+  enable_cors: true
+  cors_origins: ["https://vera.your-domain.com"]
+  enable_rate_limiting: true
+  rate_limit_per_minute: 60
+  enable_authentication: false  # Set to true for production
+  jwt_secret: "${JWT_SECRET}"
+
+# Performance Configuration
+performance:
+  enable_compression: true
+  enable_streaming: true
+  enable_parallel_processing: true
+  max_workers: 4
+  connection_pool_size: 10
+  request_timeout: 30
+
+# Feature Flags
+features:
+  enable_rag: true
+  enable_streaming_asr: true
+  enable_streaming_tts: true
+  enable_emergency_detection: true
+  enable_context_awareness: true
+  enable_analytics: true
+  enable_voice_biometrics: false
+  enable_sentiment_analysis: false
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/var/log/vera/vera.log"
+  max_file_size: "10MB"
+  backup_count: 5
+  enable_structured_logging: true
+  log_to_azure: true
+
+# Health Check Configuration
+health_check:
+  enabled: true
+  endpoint: "/health"
+  interval_seconds: 30
+  timeout_seconds: 5
+  checks:
+    - "azure_openai"
+    - "azure_speech"
+    - "azure_search"
+    - "redis"
+    - "signalr"

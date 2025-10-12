@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Stroke Navigator - VERA Cloud</title>
+    <link rel="stylesheet" href="/static/styles.css?v=3.4">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="app-sidebar">
+            <div class="sidebar-content">
+                <div class="logo-section">
+                    <img src="/static/logo.png" alt="AI Stroke Navigator" class="logo-icon">
+                </div>
+                <div class="sidebar-footer">
+                    <span class="version">v2.0</span>
+                    <div class="connection-status" id="connectionStatus">
+                        <span class="status-indicator offline"></span>
+                        <span class="status-text">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="app-main">
+            <!-- Setup Section -->
+            <section id="setup" class="section active">
+                <div class="setup-container">
+                    <h2>Welcome to AI Stroke Navigator</h2>
+                    <p class="subtitle">Your AI-powered stroke recovery assistant</p>
+                    
+                    <div class="setup-form">
+                        <div class="form-group">
+                            <label for="honorific">Title:</label>
+                            <select id="honorific" required>
+                                <option value="">Select...</option>
+                                <option value="Mr.">Mr.</option>
+                                <option value="Ms.">Ms.</option>
+                                <option value="Dr.">Dr.</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="patientName">Name (optional):</label>
+                            <input type="text" id="patientName" placeholder="Enter your name">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="scenario">Conversation Mode:</label>
+                            <select id="scenario" required>
+                                <option value="">Loading scenarios...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="voice">Voice (optional):</label>
+                            <select id="voice">
+                                <option value="">Default voice</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="rate">Speaking Rate:</label>
+                            <input type="range" id="rate" min="0.5" max="2.0" step="0.1" value="1.0">
+                            <span class="rate-value">1.0x</span>
+                        </div>
+                        
+                        <button id="startButton" class="btn btn-primary" disabled>
+                            <span class="btn-text">Start Conversation</span>
+                            <span class="btn-loading" style="display: none;">Starting...</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Conversation Section -->
+            <section id="conversation" class="section">
+                <div class="conversation-container">
+                    <div class="conversation-header">
+                        <h2>Conversation in Progress</h2>
+                        <div class="conversation-controls">
+                            <button id="endButton" class="btn btn-secondary">End Call</button>
+                            <button id="downloadButton" class="btn btn-outline" style="display: none;">Download Transcript</button>
+                        </div>
+                    </div>
+                    
+                    <div class="conversation-content">
+                        <!-- Progress Bar -->
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 0%;"></div>
+                            </div>
+                            <div class="progress-text">Ready to start</div>
+                        </div>
+                        
+                        <!-- Audio Controls -->
+                        <div class="audio-controls">
+                            <div class="mic-container">
+                                <div class="mic-button" id="micButton">
+                                    <div class="mic-icon">
+                                        <svg viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                                            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                                        </svg>
+                                    </div>
+                                    <div class="mic-level" id="micLevel"></div>
+                                </div>
+                                <div class="mic-status" id="micStatus">Click to speak</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Text Input Fallback -->
+                        <div class="text-input-fallback" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
+                            <label for="textInput" style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">Or type your response:</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="textInput" placeholder="Type your response here..." 
+                                       style="flex: 1; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;">
+                                <button id="sendTextButton" 
+                                        style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                                    Send
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Progress Bar -->
+                        <div class="progress-container" style="margin-bottom: 15px;">
+                            <div class="progress-bar" style="width: 100%; height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden;">
+                                <div id="progressBar" class="progress-fill" style="width: 0%; height: 100%; background: #007bff; transition: width 0.3s ease;" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                            </div>
+                            <div id="progressText" class="progress-text" style="text-align: center; margin-top: 5px; font-size: 14px; color: #6c757d;">Progress: 0%</div>
+                        </div>
+                        
+                        <!-- Transcript -->
+                        <div class="transcript-container">
+                            <div class="transcript" id="transcript">
+                                <!-- Messages will be added dynamically -->
+                            </div>
+                        </div>
+                        
+                        <!-- RAG Context (if enabled) -->
+                        <div class="rag-context" id="ragContext" style="display: none;">
+                            <div class="rag-header">
+                                <h3>AI-Enhanced Context</h3>
+                                <span class="rag-badge">RAG Enabled</span>
+                            </div>
+                            <div class="rag-content" id="ragContent"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <div class="footer-content">
+                <p>&copy; 2024 VERA Cloud - Powered by Azure AI Services</p>
+                <div class="footer-links">
+                    <a href="#" id="privacyLink">Privacy</a>
+                    <a href="#" id="helpLink">Help</a>
+                    <a href="#" id="aboutLink">About</a>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Processing...</div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="modal" id="errorModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Error</h3>
+                <button class="modal-close" id="errorModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage">An error occurred. Please try again.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="errorModalOk">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+        <script src="/static/app.js?v=5.2"></script>
+    <script src="/static/pcm-worklet.js"></script>
+</body>
+</html>

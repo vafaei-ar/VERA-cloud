@@ -1,0 +1,326 @@
+meta:
+  organization: "PennState Health"
+  service_name: "AI stroke navigator - RAG Enhanced"
+  site: "Hershey Medical Center"
+  version: "2.0"
+  description: "Post-discharge stroke care follow-up assessment - RAG Enhanced Mode"
+  mode: "rag_enhanced"  # RAG-enhanced conversation
+  rag_config:
+    search_index: "stroke-care-knowledge"
+    max_results: 3
+    confidence_threshold: 0.7
+    emergency_detection: true
+
+greeting:
+  template: >
+    Good {timeofday} {honorific} {patient_name}. I'm an AI stroke navigator calling from {organization}.
+    I understand you recently had an ischemic stroke and received care at {site}.
+    My goal is to gently check in and see how you're doing since leaving the hospital.
+    I'll ask a few questions and listen to what you share. I can also provide some helpful information based on your responses.
+    If you need a moment to think, that's completely okay.
+    I can't answer questions during this call, but I can note any requests for your care team at the end.
+    With your permission, this call will be recorded to help document your care. 
+  variables:
+    - timeofday     # computed: morning/afternoon/evening
+    - honorific     # UI input: "Mr." or "Ms."
+    - patient_name  # UI input
+    - organization  # from meta
+    - site         # from meta
+
+flow:
+  - key: consent
+    type: confirm
+    prompt: "Do you consent to proceed with this recorded call?"
+    on_deny: >
+      Thank you for letting me know. We won't proceed today.
+      If this is an emergency, please call your local emergency number or 911.
+      If you'd like to speak with someone from our care team, please call the main hospital number.
+      Take care and have a good day.
+
+  - key: know_ischemic
+    type: confirm
+    prompt: "Just to make sure we're on the same page, are you familiar with what an ischemic stroke is?"
+    on_deny: >
+      An ischemic stroke happens when a blood vessel that brings blood to the brain is blocked.
+      This can damage brain cells. Knowing this can help make sense of your care plan.
+    on_affirm: "Thank you for letting me know. We'll move on."
+
+  - key: describe_condition
+    type: free
+    prompt: "In your own words, what do you understand about your condition? There's no right or wrong here. share whatever feels comfortable."
+    rag_enhancement:
+      search_queries:
+        - "stroke recovery understanding patient education"
+        - "ischemic stroke explanation patient-friendly"
+      context_fields: ["patient_education", "stroke_explanation", "recovery_basics"]
+      follow_up_prompts:
+        - "Based on what you've shared, I'd like to ask about specific aspects of your recovery..."
+        - "Your understanding helps me ask more relevant questions about your care..."
+
+  - section: "General Well-Being"
+  
+  - key: general_feeling
+    type: free
+    prompt: "How have you been feeling overall since your hospital discharge?"
+    rag_enhancement:
+      search_queries:
+        - "stroke recovery general well-being post-discharge"
+        - "stroke recovery timeline early stages"
+      context_fields: ["recovery_timeline", "common_symptoms", "well_being_indicators"]
+      follow_up_prompts:
+        - "Based on what you've shared, I'd like to ask about specific symptoms that are common in stroke recovery..."
+        - "Your response reminds me of some important recovery guidelines I should mention..."
+  
+  - key: new_symptoms
+    type: free
+    prompt: "Have you noticed any new or worsening symptoms since discharge? This could include weakness, speech problems, vision changes, balance issues, or anything else that concerns you."
+    rag_enhancement:
+      search_queries:
+        - "stroke warning signs emergency symptoms"
+        - "post-stroke complications monitoring"
+        - "stroke recovery symptoms to watch"
+      context_fields: ["warning_signs", "emergency_protocols", "when_to_call_911", "symptom_monitoring"]
+      emergency_detection: true
+      follow_up_prompts:
+        - "Based on the symptoms you've described, I want to make sure you know the warning signs to watch for..."
+        - "Your symptoms are important to track. Let me share some guidance about what to monitor..."
+  
+  - key: pain_fatigue_mood
+    type: free
+    prompt: "Are you experiencing any pain, headaches, unusual fatigue, anxiety, or changes in your mood?"
+    rag_enhancement:
+      search_queries:
+        - "stroke recovery pain management"
+        - "post-stroke fatigue depression anxiety"
+        - "stroke recovery mood changes"
+      context_fields: ["pain_management", "fatigue_management", "mood_support", "mental_health"]
+      follow_up_prompts:
+        - "Pain and mood changes are common after stroke. Let me share some strategies that might help..."
+        - "Based on what you're experiencing, I want to make sure you have the right support..."
+
+  - section: "Medications and Adherence"
+  
+  - key: meds_pickup
+    type: free
+    prompt: "Were you able to pick up all your prescribed medications from the pharmacy?"
+    rag_enhancement:
+      search_queries:
+        - "medication access pharmacy stroke recovery"
+        - "medication adherence stroke patients"
+      context_fields: ["medication_access", "pharmacy_support", "medication_importance"]
+      follow_up_prompts:
+        - "Medication access is crucial for stroke recovery. Let me share some resources that might help..."
+  
+  - key: meds_understanding
+    type: free
+    prompt: "Do you understand what each of your medications is for and how to take them? Do you have any questions about your medications?"
+    rag_enhancement:
+      search_queries:
+        - "stroke medication education patient understanding"
+        - "blood thinners stroke prevention medication"
+      context_fields: ["medication_education", "blood_thinners", "medication_timing", "side_effects"]
+      follow_up_prompts:
+        - "Understanding your medications is so important. Let me share some key information about stroke medications..."
+        - "Based on your questions, I want to make sure you have the right information about your medications..."
+  
+  - key: meds_adherence
+    type: free
+    prompt: "Have you missed any doses of your medications, or have you had trouble taking them as prescribed?"
+    rag_enhancement:
+      search_queries:
+        - "medication adherence stroke recovery importance"
+        - "medication reminders stroke patients"
+      context_fields: ["adherence_importance", "medication_reminders", "missed_doses", "compliance_strategies"]
+      follow_up_prompts:
+        - "Medication adherence is critical for stroke recovery. Let me share some strategies that might help..."
+        - "Based on your experience, I want to make sure you have the support you need for medication management..."
+  
+  - key: meds_sidefx
+    type: free
+    prompt: "Have you noticed any side effects from your medications? This could include dizziness, unusual bleeding, nausea, or any other concerning symptoms."
+    rag_enhancement:
+      search_queries:
+        - "stroke medication side effects management"
+        - "blood thinner side effects monitoring"
+      context_fields: ["side_effects", "bleeding_risks", "when_to_call_doctor", "side_effect_management"]
+      follow_up_prompts:
+        - "Side effects are important to monitor. Let me share some guidance about what to watch for..."
+        - "Based on the side effects you're experiencing, I want to make sure you know when to seek help..."
+
+  - section: "Follow-up Care"
+  
+  - key: fup_scheduled
+    type: free
+    prompt: "Have you scheduled follow-up visits with your primary care provider and neurologist as recommended?"
+    rag_enhancement:
+      search_queries:
+        - "stroke follow-up care appointments importance"
+        - "stroke recovery care team coordination"
+      context_fields: ["follow_up_importance", "care_team_coordination", "appointment_scheduling"]
+      follow_up_prompts:
+        - "Follow-up care is essential for stroke recovery. Let me share why these appointments are so important..."
+  
+  - key: rehab_scheduled
+    type: free
+    prompt: "Do you have rehabilitation therapy sessions scheduled? This might include physical therapy, occupational therapy, or speech therapy."
+    rag_enhancement:
+      search_queries:
+        - "stroke rehabilitation therapy importance"
+        - "physical therapy occupational therapy stroke recovery"
+      context_fields: ["rehabilitation_importance", "therapy_types", "recovery_milestones"]
+      follow_up_prompts:
+        - "Rehabilitation is a key part of stroke recovery. Let me share some information about the different types of therapy..."
+  
+  - key: transport_help
+    type: free
+    prompt: "Do you need help with transportation to your medical appointments?"
+    rag_enhancement:
+      search_queries:
+        - "medical transportation stroke patients"
+        - "transportation assistance healthcare access"
+      context_fields: ["transportation_resources", "healthcare_access", "community_support"]
+      follow_up_prompts:
+        - "Transportation shouldn't be a barrier to your care. Let me share some resources that might help..."
+
+  - section: "Lifestyle Management"
+  
+  - key: lifestyle_adherence
+    type: free
+    prompt: "Have you been able to follow any diet or activity recommendations that were given to you at discharge?"
+    rag_enhancement:
+      search_queries:
+        - "stroke recovery diet recommendations"
+        - "stroke recovery exercise activity guidelines"
+      context_fields: ["diet_recommendations", "exercise_guidelines", "lifestyle_modifications"]
+      follow_up_prompts:
+        - "Lifestyle changes are important for stroke recovery. Let me share some practical tips..."
+        - "Based on your current situation, I want to make sure you have realistic and helpful guidance..."
+  
+  - key: bp_readings
+    type: free
+    prompt: "Are you checking your blood pressure at home? If yes, what have your recent readings been?"
+    rag_enhancement:
+      search_queries:
+        - "blood pressure monitoring stroke recovery"
+        - "hypertension management stroke prevention"
+      context_fields: ["bp_monitoring", "hypertension_management", "target_readings"]
+      follow_up_prompts:
+        - "Blood pressure monitoring is crucial for stroke recovery. Let me share some guidance about what to aim for..."
+  
+  - key: tobacco_alcohol
+    type: free
+    prompt: "Do you currently smoke tobacco or drink alcohol? Has anyone from the care team talked with you about reducing these risk factors?"
+    rag_enhancement:
+      search_queries:
+        - "smoking cessation stroke recovery"
+        - "alcohol consumption stroke risk"
+      context_fields: ["smoking_cessation", "alcohol_guidelines", "risk_reduction"]
+      follow_up_prompts:
+        - "Reducing risk factors is important for stroke recovery. Let me share some resources that might help..."
+
+  - section: "Daily Activities and Support"
+  
+  - key: adl_support
+    type: free
+    prompt: "How are you managing your daily activities like walking, bathing, dressing, and cooking? Do you need help with any of these activities?"
+    rag_enhancement:
+      search_queries:
+        - "activities of daily living stroke recovery"
+        - "stroke recovery independence support"
+      context_fields: ["adl_assessment", "independence_support", "adaptive_equipment"]
+      follow_up_prompts:
+        - "Daily activities are important for independence. Let me share some strategies that might help..."
+        - "Based on your current needs, I want to make sure you have the right support..."
+  
+  - key: home_safety
+    type: free
+    prompt: "Are there any challenges with mobility or safety in your home? For example, stairs, bathroom access, or concerns about falling?"
+    rag_enhancement:
+      search_queries:
+        - "home safety stroke recovery"
+        - "fall prevention stroke patients"
+      context_fields: ["home_safety", "fall_prevention", "mobility_aids"]
+      follow_up_prompts:
+        - "Home safety is crucial for stroke recovery. Let me share some important considerations..."
+  
+  - key: support_system
+    type: free
+    prompt: "Do you have family or friends helping you at home? How is that support working for you?"
+    rag_enhancement:
+      search_queries:
+        - "caregiver support stroke recovery"
+        - "family support stroke patients"
+      context_fields: ["caregiver_support", "family_education", "support_resources"]
+      follow_up_prompts:
+        - "Having support is so important for stroke recovery. Let me share some resources for both you and your caregivers..."
+
+  - section: "Resources and Next Steps"
+  
+  - key: who_to_call
+    type: free
+    prompt: "Do you know who to call if you experience new stroke symptoms or have urgent questions about your care?"
+    rag_enhancement:
+      search_queries:
+        - "stroke emergency contacts"
+        - "stroke care team contact information"
+      context_fields: ["emergency_contacts", "care_team_contacts", "urgent_care"]
+      follow_up_prompts:
+        - "Knowing who to call is so important. Let me make sure you have the right contact information..."
+  
+  - key: resources_interest
+    type: free
+    prompt: "Would you be interested in information about stroke support groups, counseling services, or community resources?"
+    rag_enhancement:
+      search_queries:
+        - "stroke support groups resources"
+        - "stroke recovery community resources"
+      context_fields: ["support_groups", "counseling_services", "community_resources"]
+      follow_up_prompts:
+        - "Support groups and resources can be very helpful. Let me share some options that might interest you..."
+  
+  - key: specific_help
+    type: free
+    prompt: "Is there anything specific you need help with right now that we haven't discussed?"
+    rag_enhancement:
+      search_queries:
+        - "stroke recovery specific needs"
+        - "stroke patient assistance programs"
+      context_fields: ["specific_needs", "assistance_programs", "resource_coordination"]
+      follow_up_prompts:
+        - "I want to make sure we address all your needs. Let me share some additional resources that might help..."
+  
+  - key: additional_concerns
+    type: free
+    prompt: "Do you have any other questions or concerns you'd like me to note for your care team?"
+    rag_enhancement:
+      search_queries:
+        - "stroke recovery care team communication"
+        - "patient concerns care coordination"
+      context_fields: ["care_team_communication", "concern_documentation", "follow_up_planning"]
+      follow_up_prompts:
+        - "I'll make sure your care team knows about your concerns. Let me also share some additional information that might be helpful..."
+
+wrapup:
+  message: >
+    Thank you for taking the time to speak with me today. I've recorded all of your responses, 
+    and a member of our clinical care team will review them and follow up with you if needed.
+    
+    I hope the information I shared during our conversation was helpful for your recovery journey.
+    
+    Remember, if you experience any new stroke symptoms such as sudden weakness, speech problems, 
+    vision changes, severe headache, or loss of balance, call 911 immediately.
+    
+    For non-urgent questions, you can always contact your primary care provider or our stroke care team.
+    
+    Take care, and thank you again for your time. Goodbye.
+
+emergency_disclaimer: >
+  If you are experiencing a medical emergency or new stroke symptoms right now, 
+  please hang up and call 911 immediately.
+
+stroke_warning_signs:
+  - "Sudden weakness or numbness in face, arm, or leg, especially on one side"
+  - "Sudden confusion or trouble speaking or understanding speech"
+  - "Sudden trouble seeing in one or both eyes"
+  - "Sudden severe headache with no known cause"
+  - "Sudden trouble walking, dizziness, or loss of balance"
