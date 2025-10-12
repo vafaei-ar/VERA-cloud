@@ -72,5 +72,4 @@ jobs:
         id: deploy-to-webapp
         with:
           app-name: 'vera-cloud-app'
-          slot-name: 'Production'
           
