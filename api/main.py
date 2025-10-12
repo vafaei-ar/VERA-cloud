@@ -1212,7 +1212,7 @@ async def cleanup_conversation_data():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        "api.main:app",
         host=config["app"]["host"],
         port=config["app"]["port"],
         log_level=config["app"]["log_level"].lower(),
