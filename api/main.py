@@ -386,12 +386,12 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
         # Calculate dynamic delay based on audio duration
         if greeting_audio_duration > 0:
             # Use actual audio duration
-            dynamic_delay = max(greeting_audio_duration + 1.5, 3)  # Add 1.5s buffer, minimum 3s
+            dynamic_delay = max(greeting_audio_duration + 0.5, 3)  # Add 1.5s buffer, minimum 3s
             logger.info(f"Audio duration: {greeting_audio_duration:.1f}s, waiting {dynamic_delay:.1f}s total")
         else:
             # Fallback to text-based estimation
             text_duration = len(greeting_text) * 0.08  # ~0.08 seconds per character
-            dynamic_delay = max(text_duration + 2, 3)
+            dynamic_delay = max(text_duration + 1, 3)
             logger.info(f"Text-based estimate: {dynamic_delay:.1f}s (text length: {len(greeting_text)} chars)")
         
         await asyncio.sleep(dynamic_delay)
