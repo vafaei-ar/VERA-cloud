@@ -9,6 +9,7 @@ deployments/
 # C extensions
 *.so
 temp
+nohup*
 
 # Distribution / packaging
 .Python
