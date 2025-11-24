@@ -10,6 +10,8 @@ deployments/
 *.so
 temp
 nohup*
+telegram_bot/bot.pid
+telegram_bot/logs/
 
 # Distribution / packaging
 .Python

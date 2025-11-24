@@ -1,0 +1,26 @@
+# Telegram Bot specific ignores
+
+# Process ID file
+bot.pid
+
+# Log files
+logs/
+*.log
+
+# Environment files (should use parent .env)
+.env
+.env.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Conda environment (if created locally)
+.conda/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+

@@ -1,0 +1,23 @@
+# Telegram Bot Dependencies
+# Note: If using conda, use environment.yml instead
+# If using pip only, install parent requirements.txt first, then this file
+
+# Telegram Bot
+python-telegram-bot==20.7
+python-dotenv==1.0.0
+
+# Audio Processing (for voice messages)
+pydub==0.25.1
+
+# HTTP Client (if needed for API calls)
+httpx==0.27.0
+
+# Azure Services (required from parent app)
+# Install these from parent requirements.txt or use environment.yml
+# - openai==1.35.0
+# - azure-cognitiveservices-speech==1.34.0
+# - azure-search-documents==11.4.0
+# - redis==5.0.1
+# - PyYAML==6.0.1
+# - numpy==1.24.3
+
