@@ -72,6 +72,19 @@ def save_outcome(record: Dict[str, Any]) -> Path:
     return path
 
 
+def record_session_flags(session_id: str, flags: list) -> Dict[str, Any]:
+    """C.3 — persist the session's accumulated flags onto the outcome record.
+
+    This is what the clinician summary (A.11) reads. User urgency, stored
+    separately by record_user_urgency, is left untouched.
+    """
+    record = load_outcome(session_id)
+    record["flags"] = list(flags or [])
+    save_outcome(record)
+    logger.info(f"Recorded {len(record['flags'])} flag(s) for session {session_id}")
+    return record
+
+
 def record_reminder(session_id: str, text: str) -> Dict[str, Any]:
     """A.7 — append a patient voice reminder to the session outcome record.
 

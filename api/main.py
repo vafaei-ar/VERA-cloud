@@ -34,7 +34,7 @@ from .services.enhanced_dialog import EnhancedDialog
 from .services.outcomes import (
     record_user_urgency, USER_URGENCY_VALUES,
     load_outcome, build_clinician_summary, record_field_action,
-    record_reminder,
+    record_reminder, record_session_flags,
 )
 from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 from .services.patient_data import load_patient_context
@@ -1030,6 +1030,11 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
         # Get the wrapup message from the scenario
         if session_id in active_sessions:
             dialog = active_sessions[session_id]["dialog"]
+            # C.3 — persist accumulated flags so the clinician summary (A.11) reflects them.
+            try:
+                record_session_flags(session_id, getattr(dialog, "flags", []))
+            except Exception as _e:
+                logger.error(f"Failed to persist session flags: {_e}")
             wrapup_message = dialog.scenario.get("wrapup", {}).get("message",
                 "Thank you for your time. A member of our care team will review your responses.")
         else:

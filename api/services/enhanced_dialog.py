@@ -28,6 +28,8 @@ class EnhancedDialog:
         self.role = normalize_role(role)  # A.6 — survivor | caregiver | clinician
         # B.3 — optional PatientContext (None => generic mode, no history-dependent flags)
         self.patient_context = patient_context
+        # C.3 — flags accumulated across the session (highest severity wins).
+        self.flags = []
         
         # Load scenario
         self.scenario = self._load_scenario(scenario_path)
@@ -161,7 +163,12 @@ class EnhancedDialog:
             
             # Update session context
             await self._update_session_context(user_input, current_question)
-            
+
+            # C.3 — evaluate flags on the patient's words and accumulate (skip the
+            # consent confirm step). Tier-1 is independent of context/urgency (B.4).
+            if current_question.get("key") != "consent":
+                self._accumulate_flags(user_input)
+
             # Process based on mode and question type
             if self.mode == "rag_enhanced" and current_question.get("type") != "confirm":
                 return await self._process_rag_enhanced(user_input, current_question)
@@ -464,6 +471,22 @@ class EnhancedDialog:
             "do NOT read the medical record back to the patient verbatim."
         )
 
+    def _accumulate_flags(self, user_input: str) -> None:
+        """C.3 — merge any non-routine flags from this response into self.flags."""
+        try:
+            result = self.evaluate_flags(user_input)
+            for f in result.get("flags", []):
+                if f.get("rule_id") == "t3_routine":
+                    continue
+                if not any(e.get("rule_id") == f.get("rule_id") for e in self.flags):
+                    self.flags.append(f)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.error(f"flag accumulation failed: {e}")
+
+    def overall_tier(self) -> int:
+        """Highest-severity tier across accumulated flags (3 = routine if none)."""
+        return min([f.get("tier", 3) for f in self.flags], default=3)
+
     def evaluate_flags(self, user_text: str, user_urgency: Optional[str] = None) -> Dict:
         """B.3/B.4 — evaluate flags for a patient response using loaded context.
 
@@ -517,6 +540,9 @@ class EnhancedDialog:
                 "recovery_stage": self.session_context["recovery_stage"],
                 "risk_level": self.session_context["risk_level"],
                 "emergency_detected": self.session_context["emergency_detected"],
+                "flags": self.flags,                       # C.3 — accumulated B.4 flags
+                "overall_tier": self.overall_tier(),       # C.3
+                "context_loaded": self.patient_context is not None,
                 "responses": self.responses,
                 "timestamp": datetime.now().isoformat()
             }
