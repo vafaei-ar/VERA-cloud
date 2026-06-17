@@ -75,7 +75,16 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 
 ### Part B
 
-<!-- entries added per task -->
+**B.1 — Synthetic data (no review needed, informational):** `scripts/generate_synthetic_cdm.py` produces FICTIONAL CDM data only. Listed here for completeness; not a clinical rule.
+
+**B.4 — DRAFT tiered flagging rules (`api/services/flagging.py`)** — entire module is DRAFT, wrapped in markers. **PENDING ZAND REVIEW** for every item below:
+
+- **Tier-1 red flags** (`TIER1_RULES`): BE-FAST + chest pain, loss of consciousness, fall-with-injury. Phrase lists per rule. Fire from patient words ALONE, independent of context and user urgency. **Review:** completeness of phrase lists, false-negative risk, and whether any sign is missing.
+- **Tier-2 symptom rules** (`TIER2_SYMPTOM_RULES`): fatigue/dizziness, new/frequent headaches, medication side effects, missed doses, new mild symptoms → urgent. **Review** thresholds and categories.
+- **Tier-2 context-raised rules** (need `PatientContext`): anticoagulant + bleeding/bruising; anticoagulant + fall; anticoagulant + missed doses; BP ≥ `180/120` (hypertensive-urgency, `BP_URGENT_SYSTOLIC`/`BP_URGENT_DIASTOLIC`); diabetic + hypo/hyperglycemia symptoms. **Review** the 180/120 threshold, the "max recent BP" basis, and term lists.
+- **Guidance messages** (`GUIDANCE`, per tier): plain-language 911 / same-or-next-day / routine wording. **Review** all wording.
+- **Negation guard** (`_negated_near`): a lightweight heuristic that suppresses a match when a negation word appears just before the phrase. **Review/limitation:** simple window-based negation only; no full NLU. Errs toward flagging when unsure. Tier-1 false-negatives from missed phrasing are the key risk to assess.
+- **Invariants implemented:** Tier-1 independent of context/urgency; user urgency carried but never lowers a tier (verified by unit tests). **Confirm** these are the intended invariants.
 
 ### Part C
 
