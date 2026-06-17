@@ -101,6 +101,15 @@ monitoring:
     workspace_id: "${LOG_ANALYTICS_WORKSPACE_ID}"
     shared_key: "${LOG_ANALYTICS_SHARED_KEY}"
 
+# Role / track configuration (A.6). Only framing/wording changes by role;
+# clinical content stays the same across tracks.
+tracks:
+  available:
+    - "survivor"
+    - "caregiver"
+    - "clinician"
+  default: "survivor"
+
 # Session Configuration
 session:
   default_scenario: "guided.yml"

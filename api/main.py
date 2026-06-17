@@ -200,6 +200,7 @@ class StartRequest(BaseModel):
     scenario: str = "guided.yml"
     voice: Optional[str] = None
     rate: float = 1.0
+    role: str = "survivor"  # A.6 — survivor | caregiver | clinician
 
 class HealthResponse(BaseModel):
     status: str
@@ -278,7 +279,8 @@ async def start_session(request: StartRequest):
             redis_cache_service=redis_cache,
             scenario_path=str(scenario_path),
             honorific=request.honorific,
-            patient_name=request.patient_name
+            patient_name=request.patient_name,
+            role=request.role
         )
         
         # Build greeting
@@ -289,6 +291,7 @@ async def start_session(request: StartRequest):
             "dialog": dialog,
             "voice": request.voice,
             "rate": request.rate,
+            "role": dialog.role,
             "start_time": datetime.now().isoformat(),
             "scenario": request.scenario
         }
@@ -306,7 +309,8 @@ async def start_session(request: StartRequest):
             "session_id": session_id,
             "greeting_text": greeting_text,
             "scenario": request.scenario,
-            "mode": dialog.mode
+            "mode": dialog.mode,
+            "role": dialog.role
         }
         
     except Exception as e:

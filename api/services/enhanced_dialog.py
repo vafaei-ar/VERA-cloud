@@ -11,17 +11,20 @@ from datetime import datetime
 import json
 
 from .prompt_guidelines import assistant_guidelines
+from .roles import normalize_role, greeting_framing, prompt_framing
 
 logger = logging.getLogger(__name__)
 
 class EnhancedDialog:
-    def __init__(self, azure_openai_service, azure_search_service, redis_cache_service, 
-                 scenario_path: str, honorific: str = "", patient_name: str = ""):
+    def __init__(self, azure_openai_service, azure_search_service, redis_cache_service,
+                 scenario_path: str, honorific: str = "", patient_name: str = "",
+                 role: str = "survivor"):
         self.openai = azure_openai_service
         self.search = azure_search_service
         self.cache = redis_cache_service
         self.honorific = honorific
         self.patient_name = patient_name
+        self.role = normalize_role(role)  # A.6 — survivor | caregiver | clinician
         
         # Load scenario
         self.scenario = self._load_scenario(scenario_path)
@@ -72,7 +75,12 @@ class EnhancedDialog:
                 organization=self.scenario.get("meta", {}).get("organization", ""),
                 site=self.scenario.get("meta", {}).get("site", "")
             )
-            
+
+            # A.6 — append role framing (caregiver/clinician); clinical content unchanged.
+            framing = greeting_framing(self.role)
+            if framing:
+                greeting = f"{greeting.rstrip()} {framing}"
+
             return greeting
         except Exception as e:
             logger.error(f"Failed to build greeting: {e}")
@@ -436,6 +444,9 @@ class EnhancedDialog:
             # Shared behavioral guidelines (human oversight A.1, etc.) — single source of truth.
             base_prompt += "\n\n" + assistant_guidelines()
 
+            # A.6 — role framing (wording only; clinical content unchanged).
+            base_prompt += "\n\n" + prompt_framing(self.role)
+
             return base_prompt
             
         except Exception as e:
@@ -449,6 +460,7 @@ class EnhancedDialog:
                 "session_id": f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 "patient_name": self.patient_name,
                 "honorific": self.honorific,
+                "role": self.role,
                 "duration_minutes": self._calculate_duration(),
                 "questions_answered": len(self.responses),
                 "recovery_stage": self.session_context["recovery_stage"],

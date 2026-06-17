@@ -85,6 +85,19 @@ class VERACloudApp {
             }
         });
         
+        // A.6: role / track selection
+        this.role = 'survivor';
+        document.querySelectorAll('.role-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.role = btn.dataset.role;
+                document.querySelectorAll('.role-btn').forEach((b) => {
+                    const sel = b === btn;
+                    b.setAttribute('aria-pressed', sel ? 'true' : 'false');
+                    b.style.background = sel ? '#e7f0ff' : '#fff';
+                });
+            });
+        });
+
         // A.3: urgency self-report buttons
         document.querySelectorAll('.urgency-btn').forEach((btn) => {
             btn.addEventListener('click', () => this.setUrgency(btn.dataset.urgency, btn));
@@ -166,7 +179,8 @@ class VERACloudApp {
                     patient_name: this.elements.patientName.value || 'Patient',
                     scenario: this.elements.scenario.value,
                     voice: this.elements.voice.value || null,
-                    rate: parseFloat(this.elements.rate.value)
+                    rate: parseFloat(this.elements.rate.value),
+                    role: this.role || 'survivor'  // A.6
                 })
             });
             

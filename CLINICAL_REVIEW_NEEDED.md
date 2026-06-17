@@ -58,6 +58,10 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 
 - `api/services/outcomes.py` + `api/main.py` (`POST /api/session/{id}/urgency`): patient urgency (`routine`/`soon`/`urgent`) is stored as its OWN field (`user_reported_urgency`), separate from model/rule `flags`. **Design invariant:** user urgency is advisory and must NEVER suppress an automatic Tier-1 red-flag escalation (enforced when Part B.4 flagging lands). Not a clinical threshold itself, but **PENDING ZAND CONFIRMATION** that this separation/independence is the intended behavior.
 
+**A.6 — Role tracks (invariant to confirm)**
+
+- `api/services/roles.py`: survivor/caregiver/clinician change only *framing/wording* (greeting + system-prompt addressing). **Invariant:** clinical content, questions, and thresholds are identical across all three tracks. Not clinical itself, but **PENDING ZAND CONFIRMATION** that role-based framing is acceptable and that no clinical content should differ by track.
+
 ### Part B
 
 <!-- entries added per task -->
