@@ -85,6 +85,11 @@ class VERACloudApp {
             }
         });
         
+        // A.5: live-transcription bubble state
+        this._interimUserBubble = null;
+        this._interimRenderScheduled = false;
+        this.hideInterim = false; // set true to suppress interim text (simplified track)
+
         // A.6: role / track selection
         this.role = 'survivor';
         document.querySelectorAll('.role-btn').forEach((btn) => {
@@ -530,30 +535,86 @@ class VERACloudApp {
         this.stopAudioRecording();
     }
     
-    addTranscriptMessage(text, confidence, isFinal, sender = 'user') {
-        if (!text.trim()) return;
-        
+    _buildBubble(text, confidence, isFinal, isBot) {
         const messageDiv = document.createElement('div');
-        const isBot = sender === 'bot';
         messageDiv.className = `transcript-message ${isBot ? 'bot-message' : 'user-message'} ${isFinal ? 'final' : 'partial'}`;
-        
         const confidenceClass = confidence > 0.8 ? 'high' : confidence > 0.5 ? 'medium' : 'low';
         const avatar = isBot ? '🤖' : '👤';
-        
+        const meta = isFinal
+            ? `<span class="confidence ${confidenceClass}">${Math.round(confidence * 100)}%</span>`
+            : '<span class="partial-indicator">...</span>';
         messageDiv.innerHTML = `
             <div class="message-avatar">${avatar}</div>
             <div class="message-content">
-                <div class="message-text">${text}</div>
+                <div class="message-text"></div>
                 <div class="message-meta">
                     <span class="message-time">${new Date().toLocaleTimeString()}</span>
-                    ${isFinal ? `<span class="confidence ${confidenceClass}">${Math.round(confidence * 100)}%</span>` : '<span class="partial-indicator">...</span>'}
+                    ${meta}
                 </div>
             </div>
         `;
-        
+        // textContent (not innerHTML) so transcript/bot text can't inject markup.
+        messageDiv.querySelector('.message-text').textContent = text;
+        return messageDiv;
+    }
+
+    _renderInterimUserBubble(text) {
+        // A.5: one in-place bubble for live (interim) speech — no fragment appending.
+        if (this.hideInterim) return; // simplified track may suppress interim entirely
+        if (!text || !text.trim()) return;
+        if (!this._interimUserBubble) {
+            this._interimUserBubble = this._buildBubble(text, 0.5, false, false);
+            this.elements.transcript.appendChild(this._interimUserBubble);
+        } else {
+            this._interimUserBubble.querySelector('.message-text').textContent = text;
+        }
+        this.elements.transcript.scrollTop = this.elements.transcript.scrollHeight;
+    }
+
+    _finalizeInterimUserBubble(text, confidence) {
+        const bubble = this._interimUserBubble;
+        this._interimUserBubble = null;
+        bubble.classList.remove('partial');
+        bubble.classList.add('final');
+        bubble.querySelector('.message-text').textContent = text;
+        const meta = bubble.querySelector('.message-meta');
+        if (meta) {
+            const cc = confidence > 0.8 ? 'high' : confidence > 0.5 ? 'medium' : 'low';
+            meta.innerHTML = `<span class="message-time">${new Date().toLocaleTimeString()}</span>`
+                + `<span class="confidence ${cc}">${Math.round(confidence * 100)}%</span>`;
+        }
+        this.elements.transcript.scrollTop = this.elements.transcript.scrollHeight;
+    }
+
+    addTranscriptMessage(text, confidence, isFinal, sender = 'user') {
+        if (!text || !text.trim()) return;
+        const isBot = sender === 'bot';
+
+        // A.5: interim USER results update ONE debounced bubble in place, so text
+        // grows smoothly instead of appending "three words, then four words...".
+        if (!isFinal && !isBot) {
+            this._pendingInterimText = text;
+            if (this._interimRenderScheduled) return;
+            this._interimRenderScheduled = true;
+            setTimeout(() => {
+                this._interimRenderScheduled = false;
+                this._renderInterimUserBubble(this._pendingInterimText);
+            }, 120); // steady interval (debounce)
+            return;
+        }
+
+        // Final user result: finalize the live bubble in place if one exists.
+        if (isFinal && !isBot && this._interimUserBubble) {
+            this._finalizeInterimUserBubble(text, confidence);
+            this.stopRecording();
+            return;
+        }
+
+        // Bot messages, or a final user message with no interim bubble: append.
+        const messageDiv = this._buildBubble(text, confidence, isFinal, isBot);
         this.elements.transcript.appendChild(messageDiv);
         this.elements.transcript.scrollTop = this.elements.transcript.scrollHeight;
-        
+
         if (isFinal && !isBot) {
             this.stopRecording();
         }
