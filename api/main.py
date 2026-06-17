@@ -38,6 +38,7 @@ from .services.outcomes import (
 )
 from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 from .services.patient_data import load_patient_context
+from .services.audit import write_access
 
 # Load configuration
 config_path = Path(__file__).parent.parent / "config" / "azure.yaml"
@@ -292,6 +293,12 @@ async def start_session(request: StartRequest):
             else:
                 patient_context = load_patient_context(request.patient_id)
                 context_loaded = patient_context is not None
+            # B.5 — audit every history-load attempt (access event only, no clinical content).
+            write_access(
+                patid=request.patient_id, role=request.role,
+                consent=request.caregiver_consent, context_loaded=context_loaded,
+                session_id=session_id, note=consent_note,
+            )
 
         # Create dialog engine
         dialog = EnhancedDialog(
