@@ -1,0 +1,61 @@
+# Auto-generated micro-visit scenario (C.2). Regenerate with
+# scripts/generate_micro_scenarios.py
+# DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+#   (greeting human-oversight line, red-flag prompts, wrapup 911 guidance,
+#    and emergency_disclaimer are all DRAFT)
+meta:
+  organization: "PennState Health"
+  service_name: "AI stroke navigator - worsening (survivor)"
+  site: "Hershey Medical Center"
+  version: "1.0"
+  description: "Worsening but non-emergent check-in (exercises Tier-2 context flags)."
+  mode: "guided"
+  level: "worsening"
+  role: "survivor"
+
+greeting:
+  template: >
+    Good {timeofday} {honorific} {patient_name}. I'm an automated voice assistant from {organization}. I am a computer program, not a person on your care team. A member of your care team reviews what you share. If something looks urgent, a real person follows up. This is a short check-in about how you are doing. With your permission, this call will be recorded to help document your care.
+  variables:
+    - timeofday
+    - honorific
+    - patient_name
+    - organization
+    - site
+
+flow:
+  - key: consent
+    type: confirm
+    prompt: "Is it okay to record this check-in so we can document your care?"
+    on_deny: >
+      That's okay. We won't record today. If this is an emergency, call 911. You can call your care team any time. Take care.
+  - key: fatigue_dizzy
+    type: free
+    prompt: "Have you felt more tired or more dizzy than usual?"
+  - key: missed_doses
+    type: free
+    prompt: "Have you missed any doses of your medicines?"
+  - key: side_effects
+    type: free
+    prompt: "Have your medicines caused any side effects, like bruising or an upset stomach?"
+  - key: new_mild
+    type: free
+    prompt: "Have you had any new symptoms that feel mild but are new for you?"
+  - key: urgency_self_report
+    type: free
+    # A.3 — advisory only; never changes automatic red-flag routing
+    prompt: "How urgent does this feel to you today? You can say routine, soon, or urgent."
+
+wrapup:
+  message: >
+    Thank you for talking with me today. I wrote down what you told me. A member of your care team will look at it and follow up if you need it. Remember: if you have new stroke signs, call 911 right away. These signs include sudden weakness, trouble talking, vision changes, a very bad headache, or loss of balance. Take care, and thank you again.
+
+emergency_disclaimer: >
+  Are you (or your family member) having an emergency or new stroke signs right now? Hang up and call 911 right away.
+
+stroke_warning_signs:
+  - "Sudden weakness or numbness in the face, arm, or leg, especially on one side"
+  - "Sudden trouble speaking or understanding speech"
+  - "Sudden trouble seeing in one or both eyes"
+  - "Sudden very bad headache with no known cause"
+  - "Sudden trouble walking, dizziness, or loss of balance"
