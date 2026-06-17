@@ -302,6 +302,12 @@ flow:
       follow_up_prompts:
         - "I'll make sure your care team knows about your concerns. Let me also share some additional information that might be helpful..."
 
+  - key: urgency_self_report
+    type: free
+    # A.3 — patient sets their own urgency. Advisory only; never changes automatic
+    # red-flag routing. The app also offers Routine/Soon/Urgent buttons.
+    prompt: "How urgent does this feel to you today? You can say routine, soon, or urgent."
+
 wrapup:
   # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
   # (911 guidance and the stroke-sign list below)

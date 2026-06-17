@@ -85,6 +85,11 @@ class VERACloudApp {
             }
         });
         
+        // A.3: urgency self-report buttons
+        document.querySelectorAll('.urgency-btn').forEach((btn) => {
+            btn.addEventListener('click', () => this.setUrgency(btn.dataset.urgency, btn));
+        });
+
         // Modal controls
         document.getElementById('errorModalClose').addEventListener('click', () => this.hideError());
         document.getElementById('errorModalOk').addEventListener('click', () => this.hideError());
@@ -662,6 +667,42 @@ class VERACloudApp {
         }
     }
     
+    async setUrgency(urgency, btn) {
+        // A.3: send the patient's self-reported urgency. Advisory only — the server
+        // stores it separately and it never suppresses automatic red-flag routing.
+        const confirm = document.getElementById('urgencyConfirm');
+        if (!this.sessionId) {
+            if (confirm) confirm.textContent = 'Please start the check-in first.';
+            return;
+        }
+        // Visual selection state.
+        document.querySelectorAll('.urgency-btn').forEach((b) => {
+            b.style.boxShadow = '';
+            b.style.fontWeight = 'normal';
+        });
+        if (btn) {
+            btn.style.boxShadow = '0 0 0 3px rgba(0,0,0,0.15)';
+            btn.style.fontWeight = '700';
+        }
+        try {
+            const resp = await fetch(`/api/session/${this.sessionId}/urgency`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urgency: urgency, role: this.role || null }),
+            });
+            if (resp.ok) {
+                const labels = { routine: 'Routine', soon: 'Soon', urgent: 'Urgent' };
+                if (confirm) confirm.textContent =
+                    `Thanks — we noted this as "${labels[urgency] || urgency}". Your care team will still review everything.`;
+            } else if (confirm) {
+                confirm.textContent = 'Sorry, we could not save that. Please try again.';
+            }
+        } catch (e) {
+            console.error('setUrgency failed', e);
+            if (confirm) confirm.textContent = 'Sorry, we could not save that. Please try again.';
+        }
+    }
+
     showResponseTimeConfirmation(text) {
         // A.2: visible on-screen confirmation of what to expect after a check-in.
         try {

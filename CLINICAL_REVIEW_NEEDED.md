@@ -54,6 +54,10 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 
 - `config/azure.yaml` (`response_expectations`): default `routine_response_business_days: 2`, `monitored_real_time: false`, and urgent instructions text. Built into the end-of-call message by `build_response_time_message()` in `api/main.py` and shown on-screen by `showResponseTimeConfirmation()` in `app.js`. Rationale: Laura feared an unmonitored inbox; set expectations and route urgent issues to a human/911. Source: focus group June 2026. **PENDING ZAND REVIEW** — confirm the 2-business-day default (per site), the "not watched in real time" statement, and the urgent/911 wording.
 
+**A.3 — User self-reported urgency (design invariant to confirm)**
+
+- `api/services/outcomes.py` + `api/main.py` (`POST /api/session/{id}/urgency`): patient urgency (`routine`/`soon`/`urgent`) is stored as its OWN field (`user_reported_urgency`), separate from model/rule `flags`. **Design invariant:** user urgency is advisory and must NEVER suppress an automatic Tier-1 red-flag escalation (enforced when Part B.4 flagging lands). Not a clinical threshold itself, but **PENDING ZAND CONFIRMATION** that this separation/independence is the intended behavior.
+
 ### Part B
 
 <!-- entries added per task -->

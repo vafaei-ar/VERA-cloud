@@ -55,6 +55,12 @@ flow:
     type: free
     prompt: "Have you had any new or worse symptoms since you left the hospital?"
 
+  - key: urgency_self_report
+    type: free
+    # A.3 — patient sets their own urgency. This is advisory only and never
+    # changes automatic red-flag routing. The app also offers Routine/Soon/Urgent buttons.
+    prompt: "How urgent does this feel to you today? You can say routine, soon, or urgent."
+
 wrapup:
   # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
   # (911 guidance and the stroke-sign list below)

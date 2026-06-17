@@ -124,6 +124,22 @@
                             </div>
                         </div>
                         
+                        <!-- A.3: patient self-reported urgency (large, accessible, one-handed) -->
+                        <div class="urgency-control" id="urgencyControl" role="group" aria-label="How urgent does this feel to you?"
+                             style="margin-top: 15px; padding: 14px; background: #fff; border: 1px solid #dee2e6; border-radius: 8px;">
+                            <div style="font-weight: 600; font-size: 17px; margin-bottom: 10px; color: #212529;">How urgent does this feel to you?</div>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <button type="button" class="urgency-btn" data-urgency="routine"
+                                        style="flex: 1; min-width: 110px; min-height: 64px; font-size: 18px; border-radius: 10px; border: 2px solid #2e9e54; background: #fff; color: #14391f; cursor: pointer;">Routine</button>
+                                <button type="button" class="urgency-btn" data-urgency="soon"
+                                        style="flex: 1; min-width: 110px; min-height: 64px; font-size: 18px; border-radius: 10px; border: 2px solid #d29200; background: #fff; color: #5a4100; cursor: pointer;">Soon</button>
+                                <button type="button" class="urgency-btn" data-urgency="urgent"
+                                        style="flex: 1; min-width: 110px; min-height: 64px; font-size: 18px; border-radius: 10px; border: 2px solid #c0392b; background: #fff; color: #5a1a13; cursor: pointer;">Urgent</button>
+                            </div>
+                            <div class="urgency-confirm" id="urgencyConfirm" aria-live="polite"
+                                 style="margin-top: 10px; font-size: 15px; color: #2e7d32;"></div>
+                        </div>
+
                         <!-- Text Input Fallback -->
                         <div class="text-input-fallback" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
                             <label for="textInput" style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">Or type your response:</label>

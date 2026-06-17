@@ -215,3 +215,6 @@ __marimo__/
 
 # Cowork planning doc (not app code)
 COWORK_EXECUTION_PLAN.md
+
+# Runtime per-session outcome records (may contain patient context — never commit)
+outcomes/sessions/

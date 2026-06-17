@@ -31,6 +31,7 @@ from .services.azure_speech import AzureSpeechService
 from .services.azure_search import AzureSearchService
 from .services.redis_cache import RedisCacheService
 from .services.enhanced_dialog import EnhancedDialog
+from .services.outcomes import record_user_urgency, USER_URGENCY_VALUES
 
 # Load configuration
 config_path = Path(__file__).parent.parent / "config" / "azure.yaml"
@@ -205,6 +206,11 @@ class HealthResponse(BaseModel):
     timestamp: str
     services: Dict[str, str]
     version: str
+
+class UrgencyRequest(BaseModel):
+    # A.3 — patient self-reported urgency: "routine" | "soon" | "urgent"
+    urgency: str
+    role: Optional[str] = None
 
 # Routes
 @app.get("/")
@@ -764,6 +770,31 @@ async def download_session(session_id: str):
     except Exception as e:
         logger.error(f"Download failed for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
+@app.post("/api/session/{session_id}/urgency")
+async def set_session_urgency(session_id: str, request: UrgencyRequest):
+    """A.3 — record the patient's self-reported urgency as its own outcome field.
+
+    This is stored separately from any model/rule flag and never suppresses
+    automatic red-flag routing (which is handled independently by the flagging
+    layer). Returns the accepted value.
+    """
+    try:
+        role = request.role
+        if role is None and session_id in active_sessions:
+            role = active_sessions[session_id].get("role")
+        record = record_user_urgency(session_id, request.urgency, role=role)
+        return {
+            "session_id": session_id,
+            "user_reported_urgency": record["user_reported_urgency"],
+            "note": "User urgency is advisory and does not override automatic red-flag routing.",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to record urgency for {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record urgency")
+
 
 @app.get("/api/scenarios")
 async def get_scenarios():
