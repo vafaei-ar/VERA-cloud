@@ -344,13 +344,53 @@ async def start_session(request: StartRequest):
             "scenario": request.scenario,
             "mode": dialog.mode,
             "role": dialog.role,
+            "patient_id": request.patient_id,
             "context_loaded": context_loaded,
+            "caregiver_consent": request.caregiver_consent,
             "consent_note": consent_note
         }
         
     except Exception as e:
         logger.error(f"Failed to start session: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
+
+class SessionStartRequest(BaseModel):
+    # C.1 — canonical session-initiation contract.
+    patient_name: str
+    role: str                              # survivor | caregiver | clinician
+    patient_id: Optional[str] = None       # PATID (optional)
+    caregiver_consent: bool = False        # only relevant when role == caregiver
+    honorific: str = ""
+    scenario: str = "guided.yml"
+    voice: Optional[str] = None
+    rate: float = 1.0
+
+
+@app.post("/session/start")
+async def session_start(request: SessionStartRequest):
+    """C.1 — start a check-in. History-loading rules (also enforced in start_session):
+
+    - no PATID            -> generic mode (no patient context, no Tier-2 context flags;
+                              Tier-1 red-flag guidance still works)
+    - survivor + PATID    -> load context
+    - caregiver + PATID   -> load only if caregiver_consent is true; otherwise generic
+                              mode + 'caregiver without consent' audit note
+    - clinician + PATID   -> load (treated as authorized); audited
+
+    Returns a session object carrying role, whether context loaded, and consent.
+    """
+    sr = StartRequest(
+        honorific=request.honorific,
+        patient_name=request.patient_name,
+        scenario=request.scenario,
+        voice=request.voice,
+        rate=request.rate,
+        role=request.role,
+        patient_id=request.patient_id,
+        caregiver_consent=request.caregiver_consent,
+    )
+    return await start_session(sr)
+
 
 @app.websocket("/ws/audio/{session_id}")
 async def audio_websocket(websocket: WebSocket, session_id: str):

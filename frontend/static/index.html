@@ -73,7 +73,21 @@
                             <label for="patientName">Name (optional):</label>
                             <input type="text" id="patientName" placeholder="Enter your name">
                         </div>
-                        
+
+                        <!-- C.1: optional patient ID (PATID) to load history -->
+                        <div class="form-group">
+                            <label for="patientId">Patient ID (optional):</label>
+                            <input type="text" id="patientId" placeholder="Leave blank for a general check-in">
+                        </div>
+
+                        <!-- C.1: caregiver consent gate (only meaningful for the caregiver track) -->
+                        <div class="form-group" id="consentGroup" style="display:none;">
+                            <label style="display:flex; align-items:center; gap:10px; font-weight:500;">
+                                <input type="checkbox" id="caregiverConsent" style="width:24px; height:24px;">
+                                I have this person's consent to access their health information.
+                            </label>
+                        </div>
+
                         <div class="form-group">
                             <label for="scenario">Conversation Mode:</label>
                             <select id="scenario" required>

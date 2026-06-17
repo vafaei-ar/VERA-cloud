@@ -100,6 +100,9 @@ class VERACloudApp {
                     b.setAttribute('aria-pressed', sel ? 'true' : 'false');
                     b.style.background = sel ? '#e7f0ff' : '#fff';
                 });
+                // C.1: consent checkbox is only relevant for the caregiver track.
+                const cg = document.getElementById('consentGroup');
+                if (cg) cg.style.display = (this.role === 'caregiver') ? 'block' : 'none';
             });
         });
 
@@ -178,7 +181,9 @@ class VERACloudApp {
             await this.initializeAudio();
             
             // Start session
-            const response = await fetch('/api/start', {
+            const patientIdEl = document.getElementById('patientId');
+            const consentEl = document.getElementById('caregiverConsent');
+            const response = await fetch('/session/start', {  // C.1 canonical endpoint
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -189,7 +194,9 @@ class VERACloudApp {
                     scenario: this.elements.scenario.value,
                     voice: this.elements.voice.value || null,
                     rate: parseFloat(this.elements.rate.value),
-                    role: this.role || 'survivor'  // A.6
+                    role: this.role || 'survivor',                        // A.6
+                    patient_id: (patientIdEl && patientIdEl.value.trim()) || null,  // C.1
+                    caregiver_consent: !!(consentEl && consentEl.checked)  // C.1
                 })
             });
             
