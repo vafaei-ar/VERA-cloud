@@ -1,0 +1,88 @@
+# Local resource directory (A.8) — geographic + need lookup.
+#
+# NOTE: This is a SAMPLE curated dataset for the prototype. Entries are illustrative
+# and MUST be verified/maintained by the care team for each region before real use.
+# Resources are presented as INFORMATION ONLY, not an endorsement, and do not imply
+# insurance coverage. Keyed by region (county) -> need category -> list of resources.
+#
+# Need categories: transportation | meals | rehab | devices | support
+#
+# Phil's point: rural McKean County needs different resources than Monroe County
+# (near NYC). A region-specific list is the first version; "default" is the fallback.
+
+regions:
+  "mckean":
+    display_name: "McKean County, PA (rural)"
+    transportation:
+      - name: "Area Transportation Authority of North Central PA (ATA)"
+        description: "Shared-ride and medical transportation in rural north-central PA."
+        contact: "Call ATA for scheduling (verify current number locally)."
+      - name: "Medical Assistance Transportation Program (MATP)"
+        description: "Help getting to medical appointments for eligible residents."
+        contact: "Ask your care team or county assistance office."
+    meals:
+      - name: "Meals on Wheels (local chapter)"
+        description: "Home-delivered meals for people who cannot easily shop or cook."
+        contact: "Ask your care team for the local chapter."
+    rehab:
+      - name: "Regional outpatient rehabilitation services"
+        description: "Physical, occupational, and speech therapy near McKean County."
+        contact: "Your care team can refer you."
+    devices:
+      - name: "IpsiHand and similar rehab devices"
+        description: "Some hand-recovery devices exist; availability and coverage vary."
+        contact: "Ask your neurologist or therapist whether this fits your situation."
+    support:
+      - name: "Regional stroke support group"
+        description: "A group where survivors and caregivers share experiences."
+        contact: "Ask your care team for the nearest group."
+
+  "monroe":
+    display_name: "Monroe County, PA (near NYC metro)"
+    transportation:
+      - name: "Monroe County Transit Authority (MCTA)"
+        description: "Local bus and shared-ride service, including medical trips."
+        contact: "Contact MCTA for shared-ride scheduling (verify locally)."
+      - name: "Medical Assistance Transportation Program (MATP)"
+        description: "Help getting to medical appointments for eligible residents."
+        contact: "Ask your care team or county assistance office."
+    meals:
+      - name: "Meals on Wheels (local chapter)"
+        description: "Home-delivered meals for people who cannot easily shop or cook."
+        contact: "Ask your care team for the local chapter."
+    rehab:
+      - name: "Neurosensory / outpatient rehab centers (metro access)"
+        description: "Specialized rehab and neurosensory services within reach of the metro area."
+        contact: "Your care team can refer you."
+    devices:
+      - name: "IpsiHand and similar rehab devices"
+        description: "Some hand-recovery devices exist; availability and coverage vary."
+        contact: "Ask your neurologist or therapist whether this fits your situation."
+    support:
+      - name: "Stroke support groups (regional)"
+        description: "Multiple survivor and caregiver groups in the region."
+        contact: "Ask your care team for options near you."
+
+# Fallback when the region is unknown — national/general resources only.
+default:
+  display_name: "General (no specific region)"
+  transportation:
+    - name: "Medical Assistance Transportation Program (MATP)"
+      description: "State program that helps eligible people get to medical appointments."
+      contact: "Ask your care team or county assistance office."
+  meals:
+    - name: "Meals on Wheels America (find local)"
+      description: "Directory to find home-delivered meal programs near you."
+      contact: "Ask your care team to help you find the local program."
+  rehab:
+    - name: "Outpatient rehabilitation (via referral)"
+      description: "Physical, occupational, and speech therapy by referral."
+      contact: "Your care team can refer you."
+  devices:
+    - name: "Assistive / rehab devices"
+      description: "Devices may help with recovery; availability and coverage vary."
+      contact: "Ask your neurologist or therapist."
+  support:
+    - name: "American Stroke Association — support resources"
+      description: "Information and support options for survivors and caregivers."
+      contact: "Ask your care team for help getting connected."

@@ -32,6 +32,7 @@ from .services.azure_search import AzureSearchService
 from .services.redis_cache import RedisCacheService
 from .services.enhanced_dialog import EnhancedDialog
 from .services.outcomes import record_user_urgency, USER_URGENCY_VALUES
+from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 
 # Load configuration
 config_path = Path(__file__).parent.parent / "config" / "azure.yaml"
@@ -798,6 +799,26 @@ async def set_session_urgency(session_id: str, request: UrgencyRequest):
     except Exception as e:
         logger.error(f"Failed to record urgency for {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to record urgency")
+
+
+@app.get("/api/resources")
+async def get_resources(region: Optional[str] = None, need: Optional[str] = None):
+    """A.8 — opt-in local resource lookup by region (county) + optional need.
+
+    Separate from the core check-in. Returns information-only resources with a
+    clear non-endorsement disclaimer.
+    """
+    try:
+        return lookup_resources(region, need)
+    except Exception as e:
+        logger.error(f"Resource lookup failed: {e}")
+        raise HTTPException(status_code=500, detail="Resource lookup failed")
+
+
+@app.get("/api/resource-regions")
+async def get_resource_regions():
+    """A.8 — list regions available in the resource directory."""
+    return {"regions": list_regions(), "needs": list(NEED_CATEGORIES)}
 
 
 @app.get("/api/scenarios")
