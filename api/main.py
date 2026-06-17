@@ -31,7 +31,10 @@ from .services.azure_speech import AzureSpeechService
 from .services.azure_search import AzureSearchService
 from .services.redis_cache import RedisCacheService
 from .services.enhanced_dialog import EnhancedDialog
-from .services.outcomes import record_user_urgency, USER_URGENCY_VALUES
+from .services.outcomes import (
+    record_user_urgency, USER_URGENCY_VALUES,
+    load_outcome, build_clinician_summary, record_field_action,
+)
 from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 
 # Load configuration
@@ -799,6 +802,33 @@ async def set_session_urgency(session_id: str, request: UrgencyRequest):
     except Exception as e:
         logger.error(f"Failed to record urgency for {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to record urgency")
+
+
+@app.get("/api/session/{session_id}/clinician-summary")
+async def get_clinician_summary(session_id: str):
+    """A.11 — concise, prioritized clinician summary (flags + urgency first;
+    routine items grouped for collapsing; DRAFT role routing attached)."""
+    try:
+        record = load_outcome(session_id)
+        return build_clinician_summary(record)
+    except Exception as e:
+        logger.error(f"Clinician summary failed for {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build clinician summary")
+
+
+class FieldActionRequest(BaseModel):
+    field: str
+
+
+@app.post("/api/session/{session_id}/field-action")
+async def post_field_action(session_id: str, request: FieldActionRequest):
+    """A.11 — record that a clinician acted on a summary field (workflow-fit metric)."""
+    try:
+        counts = record_field_action(request.field)
+        return {"field": request.field, "count": counts.get(request.field, 0)}
+    except Exception as e:
+        logger.error(f"Field-action record failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record field action")
 
 
 @app.get("/api/resources")

@@ -68,6 +68,11 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 - **CONTENT GAP (needs clinical authoring):** the RAG knowledge base (`stroke-care-knowledge` index) is not known to be tagged by stroke type / affected region, so the system cannot yet reliably retrieve stroke-type-specific content (it is wired to use `PatientContext` stroke type once Part B lands). **PENDING ZAND / care team** — stroke-type-specific educational content must be clinically authored and indexed before A.4's specificity can be fully realized.
 - `is_boilerplate_only()` detector flags content-free hedges for QA only (does not block or alter clinical routing).
 
+**A.11 — Clinician summary routing (DRAFT)**
+
+- `api/services/outcomes.py` (`suggest_route`, wrapped in DRAFT markers): maps flags + user urgency to a care-team role — Tier-1 → physician/emergency (regardless of category or user urgency); Tier-2 medication → nurse/pharmacist; Tier-2 rehab/mobility → therapist; otherwise nurse/navigator or navigator (routine). Rationale: oversight is a team (Lisa). **PENDING ZAND REVIEW** — confirm role-routing rules and priority labels.
+- `build_clinician_summary()` only organizes data (priority items + urgency first, routine items separated for collapsible display) and `record_field_action()` tracks which fields clinicians use (workflow-fit, Aim 2). These are presentation/metrics, not clinical thresholds, but they surface the DRAFT routing above.
+
 ### Part B
 
 <!-- entries added per task -->

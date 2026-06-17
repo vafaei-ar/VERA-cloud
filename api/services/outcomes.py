@@ -72,6 +72,96 @@ def save_outcome(record: Dict[str, Any]) -> Path:
     return path
 
 
+def _field_usage_file() -> Path:
+    return _outcomes_dir() / "_field_usage.json"
+
+
+def record_field_action(field: str) -> Dict[str, int]:
+    """A.11 — increment a counter for a clinician-acted-on field.
+
+    Feeds Aim-2 workflow-fit evidence: which summary fields clinicians actually
+    use, so low-value fields can be dropped later. Aggregate only, no PHI.
+    """
+    path = _field_usage_file()
+    counts: Dict[str, int] = {}
+    if path.exists():
+        try:
+            with open(path, "r") as f:
+                counts = json.load(f)
+        except Exception:  # pragma: no cover - defensive
+            counts = {}
+    counts[field] = int(counts.get(field, 0)) + 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w") as f:
+        json.dump(counts, f, indent=2)
+    os.replace(tmp, path)
+    return counts
+
+
+# ===== DRAFT CLINICAL LOGIC — REQUIRES DR. ZAND SIGN-OFF =====
+# Rationale: oversight is a team (Lisa asked about nurses/PAs/speech therapists,
+#   not only physicians). Route alerts to the most appropriate role. This encodes
+#   clinical urgency and MUST be reviewed.
+# Source: focus group June 2026.
+# DO NOT treat as clinically validated.
+def suggest_route(flags: list, user_urgency: Optional[str] = None) -> Dict[str, Any]:
+    """Suggest which care-team role should see this check-in (DRAFT, A.11).
+
+    `flags` is a list of dicts that may include 'tier' (1=red,2=urgent,3=routine)
+    and 'category' (e.g. 'medication', 'rehab', 'bp', 'mood'). Returns a role plus
+    priority. Tier-1 always routes to emergency/physician regardless of category or
+    user urgency.
+    """
+    flags = flags or []
+    tiers = [f.get("tier") for f in flags if isinstance(f, dict)]
+    categories = {f.get("category") for f in flags if isinstance(f, dict)}
+
+    if 1 in tiers:
+        return {"role": "physician", "priority": "emergency",
+                "reason": "Tier-1 red flag — emergency guidance + physician/care-team escalation."}
+    if 2 in tiers:
+        if "medication" in categories:
+            return {"role": "nurse_or_pharmacist", "priority": "urgent",
+                    "reason": "Tier-2 medication concern."}
+        if "rehab" in categories or "mobility" in categories:
+            return {"role": "therapist", "priority": "urgent",
+                    "reason": "Tier-2 rehabilitation/mobility concern."}
+        return {"role": "nurse_or_navigator", "priority": "urgent",
+                "reason": "Tier-2 urgent clinician review."}
+    # No model red/urgent flags: user-reported urgency can raise visibility but
+    # never creates a Tier-1 escalation on its own.
+    if user_urgency == "urgent":
+        return {"role": "nurse_or_navigator", "priority": "review_soon",
+                "reason": "Patient marked this urgent (advisory; no automatic red flag)."}
+    return {"role": "navigator", "priority": "routine",
+            "reason": "No red/urgent flags; routine follow-up."}
+# ===== END DRAFT CLINICAL LOGIC =====
+
+
+def build_clinician_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+    """A.11 — concise, prioritized clinician summary.
+
+    Leads with flagged items + user-reported urgency; routine/normal items are
+    grouped separately so the UI can collapse them and avoid noise. Routing
+    (DRAFT) is attached. This function only organizes/presents existing data.
+    """
+    flags = record.get("flags", []) or []
+    priority_flags = [f for f in flags if isinstance(f, dict) and f.get("tier") in (1, 2)]
+    routine_flags = [f for f in flags if isinstance(f, dict) and f.get("tier") not in (1, 2)]
+    urgency = record.get("user_reported_urgency")
+
+    return {
+        "session_id": record.get("session_id"),
+        "user_reported_urgency": urgency,           # A.3 — shown alongside model flags
+        "priority_items": priority_flags,           # lead with these
+        "routine_items": routine_flags,             # collapsible "all normal" noise
+        "has_priority": bool(priority_flags) or urgency == "urgent",
+        "suggested_route": suggest_route(flags, urgency),  # DRAFT routing
+        "generated_at": datetime.now().isoformat(),
+    }
+
+
 def record_user_urgency(session_id: str, urgency: str,
                         role: Optional[str] = None) -> Dict[str, Any]:
     """Record the patient's self-reported urgency (A.3) as its own field.
