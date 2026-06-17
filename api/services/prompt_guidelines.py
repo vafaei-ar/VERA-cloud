@@ -44,11 +44,61 @@ PLAIN_LANGUAGE = (
 )
 
 
+# Specific-not-boilerplate constraint (A.4). Focus group (Phil): "all strokes are
+# different" as a COMPLETE answer makes people tune out. Acknowledge variability at
+# most once, then say something concrete.
+SPECIFICITY = (
+    "Do not answer only with a generic disclaimer like 'all strokes are different' "
+    "or 'every recovery is unique'. You may acknowledge that variability at most "
+    "once, but every response must then add something concrete and relevant — for "
+    "example, common effects for the patient's stroke type or affected area, or a "
+    "practical next step. Make clear that any such information is general "
+    "information, not personal medical advice. If you do not have enough specific "
+    "information to be concrete, say so plainly and offer to note the question for "
+    "the care team."
+)
+
+# Phrases that, on their own, signal a content-free variability hedge (A.4 detector).
+_BOILERPLATE_MARKERS = (
+    "all strokes are different",
+    "every stroke is different",
+    "everyone is different",
+    "every recovery is different",
+    "every recovery is unique",
+    "each person is different",
+    "each patient is different",
+    "it depends on the person",
+    "it varies from person to person",
+    "everybody is different",
+)
+
+
+def is_boilerplate_only(text: str, min_substantive_words: int = 12) -> bool:
+    """Heuristic (A.4): True if a response is essentially only a variability hedge.
+
+    Strips out known boilerplate phrases; if little substantive content remains,
+    the response is flagged as boilerplate-only. Conservative on purpose — it is a
+    lightweight check used to log/flag, not to block.
+    """
+    if not text:
+        return False
+    lowered = text.lower()
+    if not any(m in lowered for m in _BOILERPLATE_MARKERS):
+        return False
+    stripped = lowered
+    for m in _BOILERPLATE_MARKERS:
+        stripped = stripped.replace(m, " ")
+    # Remove non-alphabetic noise and count remaining words.
+    remaining = [w for w in "".join(
+        c if c.isalpha() else " " for c in stripped
+    ).split() if len(w) > 2]
+    return len(remaining) < min_substantive_words
+
+
 def assistant_guidelines() -> str:
     """Return the shared behavioral guidelines block appended to system prompts.
 
     Built from the constants above so all prompt-construction sites stay in sync.
-    Later focus-group tasks (e.g. A.4 specificity) extend this.
     """
-    parts = [HUMAN_OVERSIGHT, PLAIN_LANGUAGE]
+    parts = [HUMAN_OVERSIGHT, PLAIN_LANGUAGE, SPECIFICITY]
     return "\n\n".join(p for p in parts if p)

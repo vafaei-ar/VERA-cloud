@@ -62,6 +62,12 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 
 - `api/services/roles.py`: survivor/caregiver/clinician change only *framing/wording* (greeting + system-prompt addressing). **Invariant:** clinical content, questions, and thresholds are identical across all three tracks. Not clinical itself, but **PENDING ZAND CONFIRMATION** that role-based framing is acceptable and that no clinical content should differ by track.
 
+**A.4 — Specific-not-boilerplate + knowledge-base content gap**
+
+- `api/services/prompt_guidelines.py` (`SPECIFICITY`): instructs the model to add concrete, stroke-type-relevant information rather than only a variability hedge, framed as "general information, not personal medical advice." **PENDING ZAND REVIEW** — confirm the "general information, not advice" framing and that encouraging specificity is safe.
+- **CONTENT GAP (needs clinical authoring):** the RAG knowledge base (`stroke-care-knowledge` index) is not known to be tagged by stroke type / affected region, so the system cannot yet reliably retrieve stroke-type-specific content (it is wired to use `PatientContext` stroke type once Part B lands). **PENDING ZAND / care team** — stroke-type-specific educational content must be clinically authored and indexed before A.4's specificity can be fully realized.
+- `is_boilerplate_only()` detector flags content-free hedges for QA only (does not block or alter clinical routing).
+
 ### Part B
 
 <!-- entries added per task -->

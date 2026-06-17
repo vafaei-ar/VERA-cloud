@@ -10,7 +10,7 @@ import yaml
 from datetime import datetime
 import json
 
-from .prompt_guidelines import assistant_guidelines
+from .prompt_guidelines import assistant_guidelines, is_boilerplate_only
 from .roles import normalize_role, greeting_framing, prompt_framing
 
 logger = logging.getLogger(__name__)
@@ -215,7 +215,19 @@ class EnhancedDialog:
                     context=context["knowledge"]["general"],
                     system_prompt=self._build_rag_system_prompt(current_question, context)
                 )
-                
+
+                # A.4 — flag responses whose only substantive content is a
+                # variability disclaimer (logged for QA; does not block).
+                try:
+                    if is_boilerplate_only(rag_response.get("response", "")):
+                        rag_response["boilerplate_flag"] = True
+                        logger.warning(
+                            "Boilerplate-only response detected for question "
+                            f"'{current_question.get('key')}'"
+                        )
+                except Exception as _e:  # pragma: no cover - defensive
+                    logger.debug(f"boilerplate check skipped: {_e}")
+
                 # Generate follow-up question
                 follow_up = await self.openai.generate_follow_up_question(
                     user_input=user_input,
