@@ -39,6 +39,12 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 - `scenarios/rag_enhanced.yml` (greeting): same line as above. **PENDING ZAND REVIEW.**
 - `api/services/prompt_guidelines.py` (`HUMAN_OVERSIGHT`): instructs the model to point worried patients to the human-review pathway and to advise calling care team or 911 for anything urgent. Rationale: avoid over-disclaiming; route worry to humans. Source: focus group + BE-FAST escalation norms. **PENDING ZAND REVIEW** — confirm the "call care team or 911" framing and that pointing to human review is appropriate.
 
+**A.9 — Plain-language rewrites of escalation text**
+
+- `scenarios/guided.yml` and `scenarios/rag_enhanced.yml` (`wrapup`): simplified 911 guidance and the stroke-sign list ("sudden weakness, trouble talking, vision changes, a very bad headache, or loss of balance"). Rationale: plain language for low-literacy / aphasia patients. Source: focus group (Lisa) + BE-FAST. **PENDING ZAND REVIEW** — confirm the simplified stroke-sign wording is clinically adequate and not under-inclusive.
+- `scenarios/guided.yml` and `scenarios/rag_enhanced.yml` (`emergency_disclaimer`): simplified to *"Are you having an emergency or new stroke signs right now? Hang up and call 911 right away."* **PENDING ZAND REVIEW.**
+- Note: `api/services/prompt_guidelines.py` `PLAIN_LANGUAGE` is a wording/pacing constraint (not itself clinical), but it governs how generated clinical-adjacent responses are phrased.
+
 ### Part B
 
 <!-- entries added per task -->

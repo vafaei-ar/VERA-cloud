@@ -32,11 +32,23 @@ HUMAN_OVERSIGHT = (
 # ===== END DRAFT CLINICAL LOGIC =====
 
 
+# Plain-language constraint (A.9). Not clinical content, but safety-relevant:
+# stroke survivors (incl. aphasia) need simple wording and slow pacing.
+PLAIN_LANGUAGE = (
+    "Use plain, everyday language at about a 6th-grade reading level. Keep "
+    "sentences short — one idea per sentence. Prefer common words over medical "
+    "terms; if a medical term is necessary, explain it in a few simple words. "
+    "Keep each turn brief so the patient is not overwhelmed. Speak slowly and "
+    "calmly. If the patient seems confused or asks, happily repeat or rephrase "
+    "what you said in simpler words. Never rush the patient."
+)
+
+
 def assistant_guidelines() -> str:
     """Return the shared behavioral guidelines block appended to system prompts.
 
     Built from the constants above so all prompt-construction sites stay in sync.
-    Later focus-group tasks (A.4 specificity, A.9 plain language) extend this.
+    Later focus-group tasks (e.g. A.4 specificity) extend this.
     """
-    parts = [HUMAN_OVERSIGHT]
+    parts = [HUMAN_OVERSIGHT, PLAIN_LANGUAGE]
     return "\n\n".join(p for p in parts if p)
