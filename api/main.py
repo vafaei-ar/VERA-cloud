@@ -823,19 +823,49 @@ async def test_tts(request: dict):
         logger.error(f"TTS test failed: {e}")
         return {"error": f"TTS failed: {str(e)}"}
 
+def build_response_time_message(cfg: dict) -> str:
+    """Build the configurable response-time expectation message (A.2).
+
+    Driven by config['response_expectations'] so each deployment can set its own
+    timeframe and urgent instructions without code changes.
+
+    # ===== DRAFT CLINICAL LOGIC — REQUIRES DR. ZAND SIGN-OFF =====
+    # Rationale: focus group (Laura) feared an unmonitored inbox; set expectations
+    #   plainly and always route urgent issues to a human / 911.
+    # Source: focus group June 2026.
+    # DO NOT treat the timeframe or urgent wording as clinically validated.
+    """
+    re_cfg = (cfg or {}).get("response_expectations", {}) or {}
+    days = re_cfg.get("routine_response_business_days", 2)
+    urgent = re_cfg.get(
+        "urgent_instructions",
+        "For anything urgent, call your care team. If it is an emergency, call 911.",
+    )
+    not_realtime = "" if re_cfg.get("monitored_real_time", False) else \
+        "This check-in is not watched in real time. "
+    plural = "day" if days == 1 else "days"
+    return f"{not_realtime}For routine questions, expect a reply within {days} business {plural}. {urgent}"
+    # ===== END DRAFT CLINICAL LOGIC =====
+
+
 async def handleConversationComplete(session_id: str, websocket: WebSocket):
     """Handle conversation completion"""
     try:
         logger.info(f"Handling conversation completion for session {session_id}")
-        
+
         # Get the wrapup message from the scenario
         if session_id in active_sessions:
             dialog = active_sessions[session_id]["dialog"]
-            wrapup_message = dialog.scenario.get("wrapup", {}).get("message", 
+            wrapup_message = dialog.scenario.get("wrapup", {}).get("message",
                 "Thank you for your time. A member of our care team will review your responses.")
         else:
             wrapup_message = "Thank you for your time. A member of our care team will review your responses."
-        
+
+        # A.2: append the configurable response-time expectation to the spoken wrapup,
+        # and send it as a separate field so the UI can show it on-screen too.
+        response_time_message = build_response_time_message(config)
+        wrapup_message = f"{wrapup_message} {response_time_message}"
+
         logger.info(f"Wrapup message: {wrapup_message}")
         
         if azure_speech and session_id in active_sessions:
@@ -868,6 +898,7 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                 
                 await websocket.send_text(json.dumps({
                     "type": "completion",
+                    "response_time_message": response_time_message,
                     "text": wrapup_message,
                     "audio_data": audio_base64,
                     "progress": 100.0
@@ -876,6 +907,7 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                 logger.error(f"TTS failed for completion: {e}")
                 await websocket.send_text(json.dumps({
                     "type": "completion",
+                    "response_time_message": response_time_message,
                     "text": wrapup_message,
                     "progress": 100.0
                 }))

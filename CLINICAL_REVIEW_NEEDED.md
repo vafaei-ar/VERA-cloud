@@ -50,6 +50,10 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 - `scenarios/guided.yml` and `scenarios/rag_enhanced.yml` (greeting): spoken self-identification changed to *"I'm an automated voice assistant ... a computer program, not a person on your care team"* (removes the human "stroke navigator" role implication per Margie). Identity wording — confirm it is acceptable phrasing. **PENDING ZAND REVIEW.**
 - `frontend/static/index.html` (setup screen banner): standing instruction *"If you have new stroke signs or an emergency, call 911 right away. For urgent questions, call your care team at the number they gave you."* Escalation/contact guidance. **PENDING ZAND REVIEW** — confirm wording and whether a specific care-team number/route should be shown.
 
+**A.2 — Response-time expectations**
+
+- `config/azure.yaml` (`response_expectations`): default `routine_response_business_days: 2`, `monitored_real_time: false`, and urgent instructions text. Built into the end-of-call message by `build_response_time_message()` in `api/main.py` and shown on-screen by `showResponseTimeConfirmation()` in `app.js`. Rationale: Laura feared an unmonitored inbox; set expectations and route urgent issues to a human/911. Source: focus group June 2026. **PENDING ZAND REVIEW** — confirm the 2-business-day default (per site), the "not watched in real time" statement, and the urgent/911 wording.
+
 ### Part B
 
 <!-- entries added per task -->

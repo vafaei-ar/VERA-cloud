@@ -404,6 +404,10 @@ class VERACloudApp {
                 if (message.audio_data) {
                     this.playTTSAudioFromBase64(message.audio_data, message.text);
                 }
+                // A.2: show the response-time expectation on-screen (not only spoken).
+                if (message.response_time_message) {
+                    this.showResponseTimeConfirmation(message.response_time_message);
+                }
                 this.handleConversationComplete();
                 break;
             case 'error':
@@ -658,6 +662,38 @@ class VERACloudApp {
         }
     }
     
+    showResponseTimeConfirmation(text) {
+        // A.2: visible on-screen confirmation of what to expect after a check-in.
+        try {
+            const container = document.querySelector('.conversation-content')
+                || document.getElementById('transcript');
+            if (!container) return;
+            let box = document.getElementById('responseTimeConfirmation');
+            if (!box) {
+                box = document.createElement('div');
+                box.id = 'responseTimeConfirmation';
+                box.setAttribute('role', 'status');
+                box.setAttribute('aria-live', 'polite');
+                box.style.cssText = 'margin:16px 0;padding:16px 18px;background:#eef9f0;'
+                    + 'border:1px solid #99d4a7;border-left:5px solid #2e9e54;border-radius:8px;'
+                    + 'font-size:17px;line-height:1.5;color:#14391f;';
+                const title = document.createElement('div');
+                title.style.cssText = 'font-weight:700;margin-bottom:6px;';
+                title.textContent = 'What happens next';
+                const body = document.createElement('div');
+                body.id = 'responseTimeConfirmationBody';
+                box.appendChild(title);
+                box.appendChild(body);
+                container.appendChild(box);
+            }
+            // textContent (not innerHTML) to avoid injection.
+            document.getElementById('responseTimeConfirmationBody').textContent = text;
+            box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } catch (e) {
+            console.error('showResponseTimeConfirmation failed', e);
+        }
+    }
+
     async handleConversationComplete() {
         console.log('Conversation completed!');
         this.setStatus('Conversation completed');

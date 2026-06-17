@@ -111,6 +111,16 @@ session:
   max_concurrent_sessions: 100
   cleanup_interval_minutes: 5
 
+# Response-time expectations (A.2)
+# Shown on-screen AND spoken at the end of a check-in so patients know this is
+# NOT a real-time/monitored channel. Configurable per deployment.
+# DRAFT CLINICAL TEXT — wording + timeframe require Dr. Zand sign-off
+# (see CLINICAL_REVIEW_NEEDED.md). Change these values per site, no code change.
+response_expectations:
+  monitored_real_time: false
+  routine_response_business_days: 2
+  urgent_instructions: "For anything urgent, call your care team at the number they gave you. If it is an emergency or you have new stroke signs, call 911."
+
 # Audio Processing Configuration
 audio:
   sample_rate: 16000
