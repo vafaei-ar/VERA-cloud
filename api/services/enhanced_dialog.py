@@ -12,19 +12,22 @@ import json
 
 from .prompt_guidelines import assistant_guidelines, is_boilerplate_only
 from .roles import normalize_role, greeting_framing, prompt_framing
+from . import flagging
 
 logger = logging.getLogger(__name__)
 
 class EnhancedDialog:
     def __init__(self, azure_openai_service, azure_search_service, redis_cache_service,
                  scenario_path: str, honorific: str = "", patient_name: str = "",
-                 role: str = "survivor"):
+                 role: str = "survivor", patient_context=None):
         self.openai = azure_openai_service
         self.search = azure_search_service
         self.cache = redis_cache_service
         self.honorific = honorific
         self.patient_name = patient_name
         self.role = normalize_role(role)  # A.6 — survivor | caregiver | clinician
+        # B.3 — optional PatientContext (None => generic mode, no history-dependent flags)
+        self.patient_context = patient_context
         
         # Load scenario
         self.scenario = self._load_scenario(scenario_path)
@@ -437,6 +440,39 @@ class EnhancedDialog:
         except Exception as e:
             logger.error(f"Session context update failed: {e}")
     
+    def _patient_background_block(self) -> str:
+        """B.3 — background-only patient context for the system prompt.
+
+        Used to ask better questions and personalize plain-language information.
+        Explicitly NOT for diagnosis and NOT to be read back to the patient verbatim.
+        Empty string in generic mode (no PatientContext).
+        """
+        ctx = self.patient_context
+        if ctx is None:
+            return ("No patient medical history is loaded for this call (generic mode). "
+                    "Do not assume any history.")
+        try:
+            summary = ctx.to_background_summary()
+        except Exception:
+            summary = ""
+        if not summary:
+            return ""
+        return (
+            "BACKGROUND (patient history, for your awareness only): " + summary + ". "
+            "Use this only to ask better, more relevant questions and to personalize "
+            "general information. Do NOT diagnose, do NOT make treatment decisions, and "
+            "do NOT read the medical record back to the patient verbatim."
+        )
+
+    def evaluate_flags(self, user_text: str, user_urgency: Optional[str] = None) -> Dict:
+        """B.3/B.4 — evaluate flags for a patient response using loaded context.
+
+        In generic mode (no PatientContext) only context-free rules (incl. Tier-1)
+        can fire. Tier-1 always fires from the words alone.
+        """
+        return flagging.evaluate(user_text, context=self.patient_context,
+                                 user_urgency=user_urgency)
+
     def _build_rag_system_prompt(self, current_question: Dict, context: Dict) -> str:
         """Build system prompt for RAG responses"""
         try:
@@ -458,6 +494,9 @@ class EnhancedDialog:
 
             # A.6 — role framing (wording only; clinical content unchanged).
             base_prompt += "\n\n" + prompt_framing(self.role)
+
+            # B.3 — inject patient history as BACKGROUND only (if loaded).
+            base_prompt += "\n\n" + self._patient_background_block()
 
             return base_prompt
             

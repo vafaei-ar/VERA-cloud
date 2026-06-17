@@ -37,6 +37,7 @@ from .services.outcomes import (
     record_reminder,
 )
 from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
+from .services.patient_data import load_patient_context
 
 # Load configuration
 config_path = Path(__file__).parent.parent / "config" / "azure.yaml"
@@ -206,6 +207,8 @@ class StartRequest(BaseModel):
     voice: Optional[str] = None
     rate: float = 1.0
     role: str = "survivor"  # A.6 — survivor | caregiver | clinician
+    patient_id: Optional[str] = None      # B.3 — optional PATID
+    caregiver_consent: bool = False        # C.1 — consent gate for caregiver role
 
 class HealthResponse(BaseModel):
     status: str
@@ -277,6 +280,19 @@ async def start_session(request: StartRequest):
         if not scenario_path.exists():
             raise HTTPException(status_code=404, detail="Scenario not found")
         
+        # B.3 / C.1 — load patient context per role + consent gating.
+        # Rules: no PATID -> generic; caregiver without consent -> generic (+ note);
+        # survivor/caregiver-with-consent/clinician + PATID -> load context.
+        patient_context = None
+        context_loaded = False
+        consent_note = None
+        if request.patient_id:
+            if request.role == "caregiver" and not request.caregiver_consent:
+                consent_note = "caregiver without consent"
+            else:
+                patient_context = load_patient_context(request.patient_id)
+                context_loaded = patient_context is not None
+
         # Create dialog engine
         dialog = EnhancedDialog(
             azure_openai_service=azure_openai,
@@ -285,7 +301,8 @@ async def start_session(request: StartRequest):
             scenario_path=str(scenario_path),
             honorific=request.honorific,
             patient_name=request.patient_name,
-            role=request.role
+            role=request.role,
+            patient_context=patient_context
         )
         
         # Build greeting
@@ -297,6 +314,10 @@ async def start_session(request: StartRequest):
             "voice": request.voice,
             "rate": request.rate,
             "role": dialog.role,
+            "patient_id": request.patient_id,
+            "context_loaded": context_loaded,
+            "caregiver_consent": request.caregiver_consent,
+            "consent_note": consent_note,
             "start_time": datetime.now().isoformat(),
             "scenario": request.scenario
         }
@@ -315,7 +336,9 @@ async def start_session(request: StartRequest):
             "greeting_text": greeting_text,
             "scenario": request.scenario,
             "mode": dialog.mode,
-            "role": dialog.role
+            "role": dialog.role,
+            "context_loaded": context_loaded,
+            "consent_note": consent_note
         }
         
     except Exception as e:
