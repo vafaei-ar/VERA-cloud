@@ -45,6 +45,11 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 - `scenarios/guided.yml` and `scenarios/rag_enhanced.yml` (`emergency_disclaimer`): simplified to *"Are you having an emergency or new stroke signs right now? Hang up and call 911 right away."* **PENDING ZAND REVIEW.**
 - Note: `api/services/prompt_guidelines.py` `PLAIN_LANGUAGE` is a wording/pacing constraint (not itself clinical), but it governs how generated clinical-adjacent responses are phrased.
 
+**A.12 — AI identity + standing who-to-call instruction**
+
+- `scenarios/guided.yml` and `scenarios/rag_enhanced.yml` (greeting): spoken self-identification changed to *"I'm an automated voice assistant ... a computer program, not a person on your care team"* (removes the human "stroke navigator" role implication per Margie). Identity wording — confirm it is acceptable phrasing. **PENDING ZAND REVIEW.**
+- `frontend/static/index.html` (setup screen banner): standing instruction *"If you have new stroke signs or an emergency, call 911 right away. For urgent questions, call your care team at the number they gave you."* Escalation/contact guidance. **PENDING ZAND REVIEW** — confirm wording and whether a specific care-team number/route should be shown.
+
 ### Part B
 
 <!-- entries added per task -->

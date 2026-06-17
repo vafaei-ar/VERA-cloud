@@ -15,7 +15,8 @@ greeting:
   # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
   # (the human-oversight / follow-up line below)
   template: >
-    Good {timeofday} {honorific} {patient_name}. I'm an AI stroke navigator calling from {organization}.
+    Good {timeofday} {honorific} {patient_name}. I'm an automated voice assistant from {organization}.
+    I am a computer program, not a person on your care team.
     I understand you recently had an ischemic stroke and received care at {site}.
     My goal is to gently check in and see how you're doing since leaving the hospital.
     A member of your care team reviews what you share. If something looks urgent, a real person follows up.
