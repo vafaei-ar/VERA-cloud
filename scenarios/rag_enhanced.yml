@@ -12,14 +12,15 @@ meta:
     emergency_detection: true
 
 greeting:
+  # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+  # (the human-oversight / follow-up line below)
   template: >
     Good {timeofday} {honorific} {patient_name}. I'm an AI stroke navigator calling from {organization}.
     I understand you recently had an ischemic stroke and received care at {site}.
     My goal is to gently check in and see how you're doing since leaving the hospital.
-    I'll ask a few questions and listen to what you share. I can also provide some helpful information based on your responses.
+    A member of your care team reviews what you share. If something looks urgent, a real person follows up.
     If you need a moment to think, that's completely okay.
-    I can't answer questions during this call, but I can note any requests for your care team at the end.
-    With your permission, this call will be recorded to help document your care. 
+    With your permission, this call will be recorded to help document your care.
   variables:
     - timeofday     # computed: morning/afternoon/evening
     - honorific     # UI input: "Mr." or "Ms."

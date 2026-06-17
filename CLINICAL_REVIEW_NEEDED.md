@@ -33,7 +33,11 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 
 ### Part A
 
-<!-- entries added per task -->
+**A.1 — Human oversight wording**
+
+- `scenarios/guided.yml` (greeting): line *"A member of your care team reviews what you share. If something looks urgent, a real person follows up."* — Rationale: focus group (Phil, Margie) wanted visible human oversight stated once. Source: focus group June 2026. **PENDING ZAND REVIEW** — confirm this accurately describes the real review/follow-up pathway.
+- `scenarios/rag_enhanced.yml` (greeting): same line as above. **PENDING ZAND REVIEW.**
+- `api/services/prompt_guidelines.py` (`HUMAN_OVERSIGHT`): instructs the model to point worried patients to the human-review pathway and to advise calling care team or 911 for anything urgent. Rationale: avoid over-disclaiming; route worry to humans. Source: focus group + BE-FAST escalation norms. **PENDING ZAND REVIEW** — confirm the "call care team or 911" framing and that pointing to human review is appropriate.
 
 ### Part B
 

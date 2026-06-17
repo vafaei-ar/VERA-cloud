@@ -10,6 +10,8 @@ import yaml
 from datetime import datetime
 import json
 
+from .prompt_guidelines import assistant_guidelines
+
 logger = logging.getLogger(__name__)
 
 class EnhancedDialog:
@@ -418,19 +420,22 @@ class EnhancedDialog:
     def _build_rag_system_prompt(self, current_question: Dict, context: Dict) -> str:
         """Build system prompt for RAG responses"""
         try:
-            base_prompt = """You are a medical AI assistant conducting a stroke recovery follow-up call. 
-            Use the provided medical knowledge to ask informed follow-up questions. 
+            base_prompt = """You are a medical AI assistant conducting a stroke recovery follow-up call.
+            Use the provided medical knowledge to ask informed follow-up questions.
             Be empathetic, professional, and focused on patient safety."""
-            
+
             if context["knowledge"]["emergency"]:
                 base_prompt += "\n\nWARNING: Emergency keywords detected. Prioritize patient safety."
-            
+
             if context["knowledge"]["medication"]:
                 base_prompt += "\n\nFocus on medication adherence and side effects."
-            
+
             if context["knowledge"]["lifestyle"]:
                 base_prompt += "\n\nEmphasize lifestyle modifications and daily activities."
-            
+
+            # Shared behavioral guidelines (human oversight A.1, etc.) — single source of truth.
+            base_prompt += "\n\n" + assistant_guidelines()
+
             return base_prompt
             
         except Exception as e:
