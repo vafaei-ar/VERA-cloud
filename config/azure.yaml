@@ -40,8 +40,10 @@ azure_speech:
     pitch: 0
   stt:
     enable_dictation: true
-    initial_silence_timeout_ms: 5000
-    end_silence_timeout_ms: 2000
+    # A.7 — generous silence tolerance for slow/effortful/aphasic speech.
+    # (Runtime also honors env vars ASR_INITIAL_SILENCE_MS / ASR_END_SILENCE_MS.)
+    initial_silence_timeout_ms: 10000
+    end_silence_timeout_ms: 5000
 
 # Azure AI Search Configuration
 azure_search:

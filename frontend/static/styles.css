@@ -886,3 +886,64 @@ body {
     font-size: var(--font-size-sm);
     padding: var(--spacing-sm) var(--spacing-md);
 }
+
+/* =====================================================================
+   A.7 — Voice-first & low-dexterity accessibility overrides
+   Larger tap targets, higher contrast, clear focus, one-handed use.
+   Appended last so these rules win without editing the rules above.
+   ===================================================================== */
+
+/* Make the push-to-talk control the prominent, primary action. */
+.mic-button {
+    width: 160px !important;
+    height: 160px !important;
+    border-radius: 50% !important;
+    background: #2c6ef2 !important;
+    color: #fff !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25) !important;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.mic-button .mic-icon svg { width: 64px; height: 64px; }
+.mic-button:hover { background: #1f57c9 !important; }
+.mic-status {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 12px;
+    color: #14306b;
+}
+
+/* Large, high-contrast tap targets — operable one-handed, no precise taps. */
+.btn,
+button.btn,
+.setup-form select,
+.setup-form input[type="text"],
+#textInput,
+#sendTextButton {
+    min-height: 60px !important;
+    font-size: 18px !important;
+    border-radius: 10px !important;
+}
+
+/* Visible keyboard/focus indicator for every interactive control. */
+.btn:focus-visible,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+.mic-button:focus-visible,
+.role-btn:focus-visible,
+.urgency-btn:focus-visible {
+    outline: 4px solid #1b5e20 !important;
+    outline-offset: 3px !important;
+}
+
+/* Voice is the default; typing is a clearly secondary fallback. */
+.text-input-fallback { opacity: 0.95; }
+.text-input-fallback label::after { content: " (optional)"; font-weight: 400; color: #6c757d; }
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+}

@@ -108,6 +108,10 @@ class VERACloudApp {
             btn.addEventListener('click', () => this.setUrgency(btn.dataset.urgency, btn));
         });
 
+        // A.7: voice-driven reminder entry point
+        const reminderBtn = document.getElementById('reminderButton');
+        if (reminderBtn) reminderBtn.addEventListener('click', () => this.captureReminder());
+
         // Modal controls
         document.getElementById('errorModalClose').addEventListener('click', () => this.hideError());
         document.getElementById('errorModalOk').addEventListener('click', () => this.hideError());
@@ -742,6 +746,42 @@ class VERACloudApp {
         }
     }
     
+    captureReminder() {
+        // A.7: minimal voice-driven reminder. Uses the browser speech recognizer to
+        // capture one spoken phrase and saves it to the session (no fine motor needed).
+        const status = document.getElementById('reminderStatus');
+        const setStatus = (t) => { if (status) status.textContent = t; };
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) {
+            setStatus('Voice capture is not available in this browser.');
+            return;
+        }
+        setStatus('Listening… say your reminder, for example "physical therapy on Tuesday".');
+        const rec = new SR();
+        rec.lang = 'en-US';
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        rec.onresult = async (e) => {
+            const text = (e.results[0] && e.results[0][0] && e.results[0][0].transcript || '').trim();
+            if (!text) { setStatus('Sorry, I did not catch that. Please try again.'); return; }
+            try {
+                const resp = await fetch(`/api/session/${this.sessionId || 'no-session'}/reminder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text }),
+                });
+                setStatus(resp.ok
+                    ? `Saved reminder: "${text}". Your care team can see it.`
+                    : `Heard: "${text}" (could not save — please tell your care team).`);
+            } catch (err) {
+                console.error('reminder save failed', err);
+                setStatus(`Heard: "${text}" (could not save right now).`);
+            }
+        };
+        rec.onerror = () => setStatus('Sorry, voice capture did not work. Please try again.');
+        try { rec.start(); } catch (e) { setStatus('Could not start voice capture.'); }
+    }
+
     async setUrgency(urgency, btn) {
         // A.3: send the patient's self-reported urgency. Advisory only — the server
         // stores it separately and it never suppresses automatic red-flag routing.

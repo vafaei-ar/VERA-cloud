@@ -34,6 +34,7 @@ from .services.enhanced_dialog import EnhancedDialog
 from .services.outcomes import (
     record_user_urgency, USER_URGENCY_VALUES,
     load_outcome, build_clinician_summary, record_field_action,
+    record_reminder,
 )
 from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 
@@ -802,6 +803,23 @@ async def set_session_urgency(session_id: str, request: UrgencyRequest):
     except Exception as e:
         logger.error(f"Failed to record urgency for {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to record urgency")
+
+
+class ReminderRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/session/{session_id}/reminder")
+async def post_reminder(session_id: str, request: ReminderRequest):
+    """A.7 — save a voice-captured reminder to the session."""
+    try:
+        record = record_reminder(session_id, request.text)
+        return {"session_id": session_id, "reminders": record.get("reminders", [])}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error(f"Reminder save failed for {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save reminder")
 
 
 @app.get("/api/session/{session_id}/clinician-summary")

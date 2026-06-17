@@ -72,6 +72,25 @@ def save_outcome(record: Dict[str, Any]) -> Path:
     return path
 
 
+def record_reminder(session_id: str, text: str) -> Dict[str, Any]:
+    """A.7 — append a patient voice reminder to the session outcome record.
+
+    Reminders are informational notes for the patient/care team (e.g. an
+    appointment). Not clinical content; stored alongside the outcome.
+    """
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Empty reminder text.")
+    record = load_outcome(session_id)
+    record.setdefault("reminders", []).append({
+        "text": text,
+        "created_at": datetime.now().isoformat(),
+    })
+    save_outcome(record)
+    logger.info(f"Recorded reminder for session {session_id}")
+    return record
+
+
 def _field_usage_file() -> Path:
     return _outcomes_dir() / "_field_usage.json"
 

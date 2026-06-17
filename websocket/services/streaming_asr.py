@@ -24,10 +24,14 @@ class StreamingASR:
         self.speech_config.speech_recognition_language = "en-US"
         self.speech_config.enable_dictation = True
         
-        # Configure for real-time processing
-        self.speech_config.set_property("speechcontext-InitialSilenceTimeoutMs", "5000")
-        self.speech_config.set_property("speechcontext-EndSilenceTimeoutMs", "2000")
-        self.speech_config.set_property("speechcontext-InitialSilenceTimeoutMs", "5000")
+        # A.7 — tolerate slow / effortful / paused speech (incl. aphasia) so the
+        # recognizer does not cut people off mid-sentence. Configurable via env vars
+        # (ASR_INITIAL_SILENCE_MS / ASR_END_SILENCE_MS) with generous defaults.
+        import os as _os
+        initial_silence_ms = _os.environ.get("ASR_INITIAL_SILENCE_MS", "10000")
+        end_silence_ms = _os.environ.get("ASR_END_SILENCE_MS", "5000")
+        self.speech_config.set_property("speechcontext-InitialSilenceTimeoutMs", initial_silence_ms)
+        self.speech_config.set_property("speechcontext-EndSilenceTimeoutMs", end_silence_ms)
         
         # State
         self.audio_stream = None

@@ -134,8 +134,17 @@
                                     </div>
                                     <div class="mic-level" id="micLevel"></div>
                                 </div>
-                                <div class="mic-status" id="micStatus">Click to speak</div>
+                                <div class="mic-status" id="micStatus">Tap and talk</div>
                             </div>
+                        </div>
+
+                        <!-- A.7: minimal voice-driven reminder entry point (no fine motor control needed) -->
+                        <div class="reminder-control" style="margin-top: 12px; text-align: center;">
+                            <button type="button" id="reminderButton" class="btn"
+                                    style="min-height: 60px; font-size: 18px; border-radius: 10px; border: 2px solid #6a3fb5; background: #f3eefc; color: #3a1d6e; cursor: pointer; padding: 0 20px;">
+                                🎙️ Add a reminder by voice
+                            </button>
+                            <div id="reminderStatus" aria-live="polite" style="margin-top: 8px; font-size: 15px; color: #3a1d6e;"></div>
                         </div>
                         
                         <!-- A.3: patient self-reported urgency (large, accessible, one-handed) -->
