@@ -101,6 +101,13 @@ monitoring:
     workspace_id: "${LOG_ANALYTICS_WORKSPACE_ID}"
     shared_key: "${LOG_ANALYTICS_SHARED_KEY}"
 
+# Translation / limited-English support (A.10) — SCAFFOLD ONLY, disabled.
+# Do NOT enable without professional (human) translation of scenario text and the
+# knowledge base. Machine translation is unsafe for this content. See
+# docs/TRANSLATION_ROADMAP.md. Can also be overridden by env var TRANSLATION_ENABLED.
+translation:
+  enabled: false
+
 # Role / track configuration (A.6). Only framing/wording changes by role;
 # clinical content stays the same across tracks.
 tracks:
