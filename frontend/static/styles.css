@@ -947,3 +947,19 @@ input:focus-visible,
 @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
 }
+
+/* A.7 follow-up — guarantee the push-to-talk control is centered (button in its
+   container, and the icon within the button). */
+.audio-controls { display: flex !important; justify-content: center !important; }
+.mic-container {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    width: 100%;
+}
+.mic-button { margin: 0 auto var(--spacing-sm) !important; }
+.mic-button .mic-icon {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}

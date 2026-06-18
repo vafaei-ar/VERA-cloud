@@ -183,6 +183,8 @@ class VERACloudApp {
             // Start session
             const patientIdEl = document.getElementById('patientId');
             const consentEl = document.getElementById('caregiverConsent');
+            const autoListenEl = document.getElementById('autoListen');
+            this.autoListen = !!(autoListenEl && autoListenEl.checked);  // opt-in auto-listen
             const response = await fetch('/session/start', {  // C.1 canonical endpoint
                 method: 'POST',
                 headers: {
@@ -443,6 +445,7 @@ class VERACloudApp {
                 if (message.response_time_message) {
                     this.showResponseTimeConfirmation(message.response_time_message);
                 }
+                this.autoListen = false; // call is over — do not auto-activate the mic
                 this.handleConversationComplete();
                 break;
             case 'error':
@@ -475,25 +478,36 @@ class VERACloudApp {
         }
     }
     
-    async playTTSAudioFromBase64(base64Data, text) {
+    async playTTSAudioFromBase64(base64Data, text, autoListenAfter = true) {
         try {
             if (!this.audioContext) {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
-            
+
             // Convert base64 to ArrayBuffer
             const binaryString = atob(base64Data);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
             }
-            
+
             const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer);
             const source = this.audioContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(this.audioContext.destination);
+            // Auto-listen: when the assistant finishes speaking, start the mic
+            // (opt-in via checkbox; not after the closing/wrapup message).
+            source.onended = () => {
+                if (autoListenAfter && this.autoListen && this.isConnected && !this.isRecording) {
+                    setTimeout(() => {
+                        if (this.autoListen && this.isConnected && !this.isRecording) {
+                            this.startRecording();
+                        }
+                    }, 300); // small gap so it doesn't catch the tail of TTS
+                }
+            };
             source.start();
-            
+
             console.log('Playing TTS audio for:', text);
         } catch (error) {
             console.error('Error playing TTS audio from base64:', error);
