@@ -136,12 +136,13 @@ class VERACloudApp {
             const response = await fetch('/api/scenarios');
             const data = await response.json();
             
-            this.elements.scenario.innerHTML = '<option value="">Select conversation mode...</option>';
-            
+            this.elements.scenario.innerHTML = '<option value="">Select a check-in…</option>';
+
             data.scenarios.forEach(scenario => {
                 const option = document.createElement('option');
-                option.value = scenario.filename;
-                option.textContent = `${scenario.name} (${scenario.mode})`;
+                // Send the role-neutral base; the role chosen above selects the wording.
+                option.value = scenario.base || scenario.filename;
+                option.textContent = scenario.name;
                 this.elements.scenario.appendChild(option);
             });
         } catch (error) {

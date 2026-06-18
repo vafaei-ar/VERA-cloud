@@ -39,6 +39,7 @@ from .services.outcomes import (
 from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 from .services.patient_data import load_patient_context
 from .services.audit import write_access
+from .services.roles import normalize_role
 
 # Load configuration
 config_path = Path(__file__).parent.parent / "config" / "azure.yaml"
@@ -276,10 +277,11 @@ async def start_session(request: StartRequest):
         # Generate session ID
         session_id = str(uuid.uuid4())
         
-        # Load scenario
-        scenario_path = Path(__file__).parent.parent / "scenarios" / request.scenario
-        if not scenario_path.exists():
+        # Load scenario — resolve to the role-matched file (caregiver/survivor)
+        scenario_file = resolve_scenario_file(request.scenario, request.role)
+        if not scenario_file:
             raise HTTPException(status_code=404, detail="Scenario not found")
+        scenario_path = Path(__file__).parent.parent / "scenarios" / scenario_file
         
         # B.3 / C.1 — load patient context per role + consent gating.
         # Rules: no PATID -> generic; caregiver without consent -> generic (+ note);
@@ -939,23 +941,79 @@ async def get_resource_regions():
     return {"regions": list_regions(), "needs": list(NEED_CATEGORIES)}
 
 
+# Friendly, role-neutral labels for the patient-facing scenario picker.
+SCENARIO_LABELS = {
+    "guided": "General check-in (guided)",
+    "rag_enhanced": "General check-in (AI-enhanced)",
+    "micro_routine": "Routine check-in",
+    "micro_worsening": "Worsening check-in",
+    "micro_redflag": "Red-flag check-in (demo)",
+}
+
+
+def _scenario_base(stem: str) -> str:
+    """Strip a trailing _survivor/_caregiver role suffix to get the base name."""
+    for r in ("survivor", "caregiver"):
+        if stem.endswith("_" + r):
+            return stem[: -(len(r) + 1)]
+    return stem
+
+
+def resolve_scenario_file(scenario_arg: str, role: str) -> Optional[str]:
+    """Resolve a scenario request (base name or filename) + role to an actual file.
+
+    Role is authoritative: caregiver -> <base>_caregiver.yml when it exists;
+    otherwise falls back to <base>_survivor.yml, then <base>.yml.
+    """
+    sdir = Path(__file__).parent.parent / "scenarios"
+    role_n = normalize_role(role)
+    stem = scenario_arg[:-4] if scenario_arg.endswith(".yml") else scenario_arg
+    base = _scenario_base(stem)
+    candidates = []
+    if role_n != "survivor":
+        candidates.append(f"{base}_{role_n}.yml")
+    candidates += [f"{base}_survivor.yml", f"{base}.yml"]
+    for c in candidates:
+        if (sdir / c).exists():
+            return c
+    orig = scenario_arg if scenario_arg.endswith(".yml") else scenario_arg + ".yml"
+    return orig if (sdir / orig).exists() else None
+
+
 @app.get("/api/scenarios")
 async def get_scenarios():
-    """Get available scenarios"""
+    """Get available scenarios as role-neutral BASE check-ins.
+
+    Survivor/caregiver variants are collapsed into one base entry; the role chosen
+    at session start selects the wording.
+    """
     try:
         scenarios_dir = Path(__file__).parent.parent / "scenarios"
-        scenarios = []
-        
+        bases = {}
         for scenario_file in scenarios_dir.glob("*.yml"):
-            with open(scenario_file, 'r') as f:
-                scenario_data = yaml.safe_load(f)
-                scenarios.append({
-                    "filename": scenario_file.name,
-                    "name": scenario_data.get("meta", {}).get("service_name", scenario_file.stem),
-                    "description": scenario_data.get("meta", {}).get("description", ""),
-                    "mode": scenario_data.get("meta", {}).get("mode", "guided")
-                })
-        
+            stem = scenario_file.stem
+            base = _scenario_base(stem)
+            try:
+                with open(scenario_file, "r") as f:
+                    meta = (yaml.safe_load(f) or {}).get("meta", {})
+            except Exception:
+                continue
+            entry = bases.setdefault(base, {
+                "base": base, "roles": [],
+                "description": meta.get("description", ""),
+                "mode": meta.get("mode", "guided"),
+            })
+            role = "caregiver" if stem.endswith("_caregiver") else "survivor"
+            if role not in entry["roles"]:
+                entry["roles"].append(role)
+
+        order = list(SCENARIO_LABELS.keys())
+        scenarios = [
+            {"base": b, "name": SCENARIO_LABELS.get(b, b),
+             "description": e["description"], "mode": e["mode"], "roles": sorted(e["roles"])}
+            for b, e in bases.items()
+        ]
+        scenarios.sort(key=lambda x: order.index(x["base"]) if x["base"] in order else 99)
         return {"scenarios": scenarios}
         
     except Exception as e:

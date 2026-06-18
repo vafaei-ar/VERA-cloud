@@ -88,6 +88,9 @@ _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 
 ### Part C
 
+- `scenarios/guided_caregiver.yml` (caregiver variant of `guided.yml`): carries the same DRAFT clinical text as `guided.yml` — greeting human-oversight line, 911 wrapup guidance + stroke-sign list, and emergency disclaimer, reworded for a caregiver ("your family member"). **PENDING ZAND REVIEW** (same items as guided.yml).
+- Note: `rag_enhanced.yml` does not yet have a caregiver variant; caregiver sessions on the AI-enhanced check-in currently fall back to survivor ("you") wording. A caregiver rewrite of that 26-prompt script is a pending content task (and should be clinician/linguist reviewed).
+
 <!-- entries added per task -->
 
 ---

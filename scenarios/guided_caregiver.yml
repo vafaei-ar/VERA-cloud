@@ -1,0 +1,90 @@
+meta:
+  organization: "PennState Health"
+  service_name: "AI stroke navigator - Guided Mode (caregiver)"
+  site: "Hershey Medical Center"
+  version: "2.0"
+  description: "Post-discharge stroke care follow-up assessment - Guided Mode"
+  mode: "guided"
+  role: "caregiver"
+
+greeting:
+  # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+  # (the human-oversight / follow-up line below)
+  template: >
+    Good {timeofday} {honorific} {patient_name}. I'm an automated voice assistant from {organization}.
+    I am a computer program, not a person on the care team.
+    I understand you are helping care for your family member after their ischemic stroke and care at {site}.
+    My goal is to gently check in on how they are doing since leaving the hospital, and you can answer for them.
+    A member of the care team reviews what you share. If something looks urgent, a real person follows up.
+    With your permission, this call will be recorded to help document their care.
+  variables:
+    - timeofday     # computed: morning/afternoon/evening
+    - honorific     # UI input: "Mr." or "Ms."
+    - patient_name  # UI input
+    - organization  # from meta
+    - site         # from meta
+
+flow:
+  - key: consent
+    type: confirm
+    prompt: "Is it okay to record this call so we can document your family member's care?"
+    on_deny: >
+      Thank you for letting me know. We won't proceed today.
+      If this is an emergency, please call your local emergency number or 911.
+      If you'd like to speak with someone from the care team, please call the main hospital number.
+      Take care and have a good day.
+
+  - key: know_ischemic
+    type: confirm
+    prompt: "Just to make sure we're on the same page, are you familiar with what an ischemic stroke is?"
+    on_deny: >
+      An ischemic stroke happens when a blood vessel that brings blood to the brain is blocked.
+      This can damage brain cells. Knowing this can help make sense of the care plan.
+    on_affirm: "Thank you for letting me know. We'll move on."
+
+  - key: describe_condition
+    type: free
+    prompt: "In your own words, what do you understand about your family member's condition? There's no right or wrong here. Share whatever feels comfortable."
+
+  - section: "General Well-Being"
+
+  - key: general_feeling
+    type: free
+    prompt: "How has your family member been feeling overall since they left the hospital?"
+
+  - key: new_symptoms
+    type: free
+    prompt: "Has your family member had any new or worse symptoms since they left the hospital?"
+
+  - key: urgency_self_report
+    type: free
+    # A.3 — advisory only; never changes automatic red-flag routing.
+    prompt: "How urgent does this feel to you today? You can say routine, soon, or urgent."
+
+wrapup:
+  # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+  # (911 guidance and the stroke-sign list below)
+  message: >
+    Thank you for talking with me today. I wrote down what you told me.
+    A member of the care team will look at it and follow up if needed.
+
+    Remember: if your family member has new stroke signs, call 911 right away.
+    These signs include sudden weakness, trouble talking, vision changes,
+    a very bad headache, or loss of balance.
+
+    For questions that are not urgent, you can call their regular doctor
+    or our stroke care team.
+
+    Take care, and thank you again. Goodbye.
+
+# DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+emergency_disclaimer: >
+  Is your family member having an emergency or new stroke signs right now?
+  Hang up and call 911 right away.
+
+stroke_warning_signs:
+  - "Sudden weakness or numbness in face, arm, or leg, especially on one side"
+  - "Sudden confusion or trouble speaking or understanding speech"
+  - "Sudden trouble seeing in one or both eyes"
+  - "Sudden severe headache with no known cause"
+  - "Sudden trouble walking, dizziness, or loss of balance"
