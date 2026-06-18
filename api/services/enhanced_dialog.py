@@ -10,16 +10,26 @@ import yaml
 from datetime import datetime
 import json
 
+from .prompt_guidelines import assistant_guidelines, is_boilerplate_only
+from .roles import normalize_role, greeting_framing, prompt_framing
+from . import flagging
+
 logger = logging.getLogger(__name__)
 
 class EnhancedDialog:
-    def __init__(self, azure_openai_service, azure_search_service, redis_cache_service, 
-                 scenario_path: str, honorific: str = "", patient_name: str = ""):
+    def __init__(self, azure_openai_service, azure_search_service, redis_cache_service,
+                 scenario_path: str, honorific: str = "", patient_name: str = "",
+                 role: str = "survivor", patient_context=None):
         self.openai = azure_openai_service
         self.search = azure_search_service
         self.cache = redis_cache_service
         self.honorific = honorific
         self.patient_name = patient_name
+        self.role = normalize_role(role)  # A.6 — survivor | caregiver | clinician
+        # B.3 — optional PatientContext (None => generic mode, no history-dependent flags)
+        self.patient_context = patient_context
+        # C.3 — flags accumulated across the session (highest severity wins).
+        self.flags = []
         
         # Load scenario
         self.scenario = self._load_scenario(scenario_path)
@@ -70,7 +80,12 @@ class EnhancedDialog:
                 organization=self.scenario.get("meta", {}).get("organization", ""),
                 site=self.scenario.get("meta", {}).get("site", "")
             )
-            
+
+            # A.6 — append role framing (caregiver/clinician); clinical content unchanged.
+            framing = greeting_framing(self.role)
+            if framing:
+                greeting = f"{greeting.rstrip()} {framing}"
+
             return greeting
         except Exception as e:
             logger.error(f"Failed to build greeting: {e}")
@@ -148,7 +163,12 @@ class EnhancedDialog:
             
             # Update session context
             await self._update_session_context(user_input, current_question)
-            
+
+            # C.3 — evaluate flags on the patient's words and accumulate (skip the
+            # consent confirm step). Tier-1 is independent of context/urgency (B.4).
+            if current_question.get("key") != "consent":
+                self._accumulate_flags(user_input)
+
             # Process based on mode and question type
             if self.mode == "rag_enhanced" and current_question.get("type") != "confirm":
                 return await self._process_rag_enhanced(user_input, current_question)
@@ -205,7 +225,19 @@ class EnhancedDialog:
                     context=context["knowledge"]["general"],
                     system_prompt=self._build_rag_system_prompt(current_question, context)
                 )
-                
+
+                # A.4 — flag responses whose only substantive content is a
+                # variability disclaimer (logged for QA; does not block).
+                try:
+                    if is_boilerplate_only(rag_response.get("response", "")):
+                        rag_response["boilerplate_flag"] = True
+                        logger.warning(
+                            "Boilerplate-only response detected for question "
+                            f"'{current_question.get('key')}'"
+                        )
+                except Exception as _e:  # pragma: no cover - defensive
+                    logger.debug(f"boilerplate check skipped: {_e}")
+
                 # Generate follow-up question
                 follow_up = await self.openai.generate_follow_up_question(
                     user_input=user_input,
@@ -415,22 +447,80 @@ class EnhancedDialog:
         except Exception as e:
             logger.error(f"Session context update failed: {e}")
     
+    def _patient_background_block(self) -> str:
+        """B.3 — background-only patient context for the system prompt.
+
+        Used to ask better questions and personalize plain-language information.
+        Explicitly NOT for diagnosis and NOT to be read back to the patient verbatim.
+        Empty string in generic mode (no PatientContext).
+        """
+        ctx = self.patient_context
+        if ctx is None:
+            return ("No patient medical history is loaded for this call (generic mode). "
+                    "Do not assume any history.")
+        try:
+            summary = ctx.to_background_summary()
+        except Exception:
+            summary = ""
+        if not summary:
+            return ""
+        return (
+            "BACKGROUND (patient history, for your awareness only): " + summary + ". "
+            "Use this only to ask better, more relevant questions and to personalize "
+            "general information. Do NOT diagnose, do NOT make treatment decisions, and "
+            "do NOT read the medical record back to the patient verbatim."
+        )
+
+    def _accumulate_flags(self, user_input: str) -> None:
+        """C.3 — merge any non-routine flags from this response into self.flags."""
+        try:
+            result = self.evaluate_flags(user_input)
+            for f in result.get("flags", []):
+                if f.get("rule_id") == "t3_routine":
+                    continue
+                if not any(e.get("rule_id") == f.get("rule_id") for e in self.flags):
+                    self.flags.append(f)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.error(f"flag accumulation failed: {e}")
+
+    def overall_tier(self) -> int:
+        """Highest-severity tier across accumulated flags (3 = routine if none)."""
+        return min([f.get("tier", 3) for f in self.flags], default=3)
+
+    def evaluate_flags(self, user_text: str, user_urgency: Optional[str] = None) -> Dict:
+        """B.3/B.4 — evaluate flags for a patient response using loaded context.
+
+        In generic mode (no PatientContext) only context-free rules (incl. Tier-1)
+        can fire. Tier-1 always fires from the words alone.
+        """
+        return flagging.evaluate(user_text, context=self.patient_context,
+                                 user_urgency=user_urgency)
+
     def _build_rag_system_prompt(self, current_question: Dict, context: Dict) -> str:
         """Build system prompt for RAG responses"""
         try:
-            base_prompt = """You are a medical AI assistant conducting a stroke recovery follow-up call. 
-            Use the provided medical knowledge to ask informed follow-up questions. 
+            base_prompt = """You are a medical AI assistant conducting a stroke recovery follow-up call.
+            Use the provided medical knowledge to ask informed follow-up questions.
             Be empathetic, professional, and focused on patient safety."""
-            
+
             if context["knowledge"]["emergency"]:
                 base_prompt += "\n\nWARNING: Emergency keywords detected. Prioritize patient safety."
-            
+
             if context["knowledge"]["medication"]:
                 base_prompt += "\n\nFocus on medication adherence and side effects."
-            
+
             if context["knowledge"]["lifestyle"]:
                 base_prompt += "\n\nEmphasize lifestyle modifications and daily activities."
-            
+
+            # Shared behavioral guidelines (human oversight A.1, etc.) — single source of truth.
+            base_prompt += "\n\n" + assistant_guidelines()
+
+            # A.6 — role framing (wording only; clinical content unchanged).
+            base_prompt += "\n\n" + prompt_framing(self.role)
+
+            # B.3 — inject patient history as BACKGROUND only (if loaded).
+            base_prompt += "\n\n" + self._patient_background_block()
+
             return base_prompt
             
         except Exception as e:
@@ -444,11 +534,15 @@ class EnhancedDialog:
                 "session_id": f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 "patient_name": self.patient_name,
                 "honorific": self.honorific,
+                "role": self.role,
                 "duration_minutes": self._calculate_duration(),
                 "questions_answered": len(self.responses),
                 "recovery_stage": self.session_context["recovery_stage"],
                 "risk_level": self.session_context["risk_level"],
                 "emergency_detected": self.session_context["emergency_detected"],
+                "flags": self.flags,                       # C.3 — accumulated B.4 flags
+                "overall_tier": self.overall_tier(),       # C.3
+                "context_loaded": self.patient_context is not None,
                 "responses": self.responses,
                 "timestamp": datetime.now().isoformat()
             }

@@ -31,6 +31,14 @@ from .services.azure_speech import AzureSpeechService
 from .services.azure_search import AzureSearchService
 from .services.redis_cache import RedisCacheService
 from .services.enhanced_dialog import EnhancedDialog
+from .services.outcomes import (
+    record_user_urgency, USER_URGENCY_VALUES,
+    load_outcome, build_clinician_summary, record_field_action,
+    record_reminder, record_session_flags,
+)
+from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
+from .services.patient_data import load_patient_context
+from .services.audit import write_access
 
 # Load configuration
 config_path = Path(__file__).parent.parent / "config" / "azure.yaml"
@@ -199,12 +207,20 @@ class StartRequest(BaseModel):
     scenario: str = "guided.yml"
     voice: Optional[str] = None
     rate: float = 1.0
+    role: str = "survivor"  # A.6 — survivor | caregiver | clinician
+    patient_id: Optional[str] = None      # B.3 — optional PATID
+    caregiver_consent: bool = False        # C.1 — consent gate for caregiver role
 
 class HealthResponse(BaseModel):
     status: str
     timestamp: str
     services: Dict[str, str]
     version: str
+
+class UrgencyRequest(BaseModel):
+    # A.3 — patient self-reported urgency: "routine" | "soon" | "urgent"
+    urgency: str
+    role: Optional[str] = None
 
 # Routes
 @app.get("/")
@@ -265,6 +281,25 @@ async def start_session(request: StartRequest):
         if not scenario_path.exists():
             raise HTTPException(status_code=404, detail="Scenario not found")
         
+        # B.3 / C.1 — load patient context per role + consent gating.
+        # Rules: no PATID -> generic; caregiver without consent -> generic (+ note);
+        # survivor/caregiver-with-consent/clinician + PATID -> load context.
+        patient_context = None
+        context_loaded = False
+        consent_note = None
+        if request.patient_id:
+            if request.role == "caregiver" and not request.caregiver_consent:
+                consent_note = "caregiver without consent"
+            else:
+                patient_context = load_patient_context(request.patient_id)
+                context_loaded = patient_context is not None
+            # B.5 — audit every history-load attempt (access event only, no clinical content).
+            write_access(
+                patid=request.patient_id, role=request.role,
+                consent=request.caregiver_consent, context_loaded=context_loaded,
+                session_id=session_id, note=consent_note,
+            )
+
         # Create dialog engine
         dialog = EnhancedDialog(
             azure_openai_service=azure_openai,
@@ -272,7 +307,9 @@ async def start_session(request: StartRequest):
             redis_cache_service=redis_cache,
             scenario_path=str(scenario_path),
             honorific=request.honorific,
-            patient_name=request.patient_name
+            patient_name=request.patient_name,
+            role=request.role,
+            patient_context=patient_context
         )
         
         # Build greeting
@@ -283,6 +320,11 @@ async def start_session(request: StartRequest):
             "dialog": dialog,
             "voice": request.voice,
             "rate": request.rate,
+            "role": dialog.role,
+            "patient_id": request.patient_id,
+            "context_loaded": context_loaded,
+            "caregiver_consent": request.caregiver_consent,
+            "consent_note": consent_note,
             "start_time": datetime.now().isoformat(),
             "scenario": request.scenario
         }
@@ -300,12 +342,55 @@ async def start_session(request: StartRequest):
             "session_id": session_id,
             "greeting_text": greeting_text,
             "scenario": request.scenario,
-            "mode": dialog.mode
+            "mode": dialog.mode,
+            "role": dialog.role,
+            "patient_id": request.patient_id,
+            "context_loaded": context_loaded,
+            "caregiver_consent": request.caregiver_consent,
+            "consent_note": consent_note
         }
         
     except Exception as e:
         logger.error(f"Failed to start session: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
+
+class SessionStartRequest(BaseModel):
+    # C.1 — canonical session-initiation contract.
+    patient_name: str
+    role: str                              # survivor | caregiver | clinician
+    patient_id: Optional[str] = None       # PATID (optional)
+    caregiver_consent: bool = False        # only relevant when role == caregiver
+    honorific: str = ""
+    scenario: str = "guided.yml"
+    voice: Optional[str] = None
+    rate: float = 1.0
+
+
+@app.post("/session/start")
+async def session_start(request: SessionStartRequest):
+    """C.1 — start a check-in. History-loading rules (also enforced in start_session):
+
+    - no PATID            -> generic mode (no patient context, no Tier-2 context flags;
+                              Tier-1 red-flag guidance still works)
+    - survivor + PATID    -> load context
+    - caregiver + PATID   -> load only if caregiver_consent is true; otherwise generic
+                              mode + 'caregiver without consent' audit note
+    - clinician + PATID   -> load (treated as authorized); audited
+
+    Returns a session object carrying role, whether context loaded, and consent.
+    """
+    sr = StartRequest(
+        honorific=request.honorific,
+        patient_name=request.patient_name,
+        scenario=request.scenario,
+        voice=request.voice,
+        rate=request.rate,
+        role=request.role,
+        patient_id=request.patient_id,
+        caregiver_consent=request.caregiver_consent,
+    )
+    return await start_session(sr)
+
 
 @app.websocket("/ws/audio/{session_id}")
 async def audio_websocket(websocket: WebSocket, session_id: str):
@@ -765,6 +850,95 @@ async def download_session(session_id: str):
         logger.error(f"Download failed for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
 
+@app.post("/api/session/{session_id}/urgency")
+async def set_session_urgency(session_id: str, request: UrgencyRequest):
+    """A.3 — record the patient's self-reported urgency as its own outcome field.
+
+    This is stored separately from any model/rule flag and never suppresses
+    automatic red-flag routing (which is handled independently by the flagging
+    layer). Returns the accepted value.
+    """
+    try:
+        role = request.role
+        if role is None and session_id in active_sessions:
+            role = active_sessions[session_id].get("role")
+        record = record_user_urgency(session_id, request.urgency, role=role)
+        return {
+            "session_id": session_id,
+            "user_reported_urgency": record["user_reported_urgency"],
+            "note": "User urgency is advisory and does not override automatic red-flag routing.",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to record urgency for {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record urgency")
+
+
+class ReminderRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/session/{session_id}/reminder")
+async def post_reminder(session_id: str, request: ReminderRequest):
+    """A.7 — save a voice-captured reminder to the session."""
+    try:
+        record = record_reminder(session_id, request.text)
+        return {"session_id": session_id, "reminders": record.get("reminders", [])}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error(f"Reminder save failed for {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save reminder")
+
+
+@app.get("/api/session/{session_id}/clinician-summary")
+async def get_clinician_summary(session_id: str):
+    """A.11 — concise, prioritized clinician summary (flags + urgency first;
+    routine items grouped for collapsing; DRAFT role routing attached)."""
+    try:
+        record = load_outcome(session_id)
+        return build_clinician_summary(record)
+    except Exception as e:
+        logger.error(f"Clinician summary failed for {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build clinician summary")
+
+
+class FieldActionRequest(BaseModel):
+    field: str
+
+
+@app.post("/api/session/{session_id}/field-action")
+async def post_field_action(session_id: str, request: FieldActionRequest):
+    """A.11 — record that a clinician acted on a summary field (workflow-fit metric)."""
+    try:
+        counts = record_field_action(request.field)
+        return {"field": request.field, "count": counts.get(request.field, 0)}
+    except Exception as e:
+        logger.error(f"Field-action record failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record field action")
+
+
+@app.get("/api/resources")
+async def get_resources(region: Optional[str] = None, need: Optional[str] = None):
+    """A.8 — opt-in local resource lookup by region (county) + optional need.
+
+    Separate from the core check-in. Returns information-only resources with a
+    clear non-endorsement disclaimer.
+    """
+    try:
+        return lookup_resources(region, need)
+    except Exception as e:
+        logger.error(f"Resource lookup failed: {e}")
+        raise HTTPException(status_code=500, detail="Resource lookup failed")
+
+
+@app.get("/api/resource-regions")
+async def get_resource_regions():
+    """A.8 — list regions available in the resource directory."""
+    return {"regions": list_regions(), "needs": list(NEED_CATEGORIES)}
+
+
 @app.get("/api/scenarios")
 async def get_scenarios():
     """Get available scenarios"""
@@ -823,19 +997,54 @@ async def test_tts(request: dict):
         logger.error(f"TTS test failed: {e}")
         return {"error": f"TTS failed: {str(e)}"}
 
+def build_response_time_message(cfg: dict) -> str:
+    """Build the configurable response-time expectation message (A.2).
+
+    Driven by config['response_expectations'] so each deployment can set its own
+    timeframe and urgent instructions without code changes.
+
+    # ===== DRAFT CLINICAL LOGIC — REQUIRES DR. ZAND SIGN-OFF =====
+    # Rationale: focus group (Laura) feared an unmonitored inbox; set expectations
+    #   plainly and always route urgent issues to a human / 911.
+    # Source: focus group June 2026.
+    # DO NOT treat the timeframe or urgent wording as clinically validated.
+    """
+    re_cfg = (cfg or {}).get("response_expectations", {}) or {}
+    days = re_cfg.get("routine_response_business_days", 2)
+    urgent = re_cfg.get(
+        "urgent_instructions",
+        "For anything urgent, call your care team. If it is an emergency, call 911.",
+    )
+    not_realtime = "" if re_cfg.get("monitored_real_time", False) else \
+        "This check-in is not watched in real time. "
+    plural = "day" if days == 1 else "days"
+    return f"{not_realtime}For routine questions, expect a reply within {days} business {plural}. {urgent}"
+    # ===== END DRAFT CLINICAL LOGIC =====
+
+
 async def handleConversationComplete(session_id: str, websocket: WebSocket):
     """Handle conversation completion"""
     try:
         logger.info(f"Handling conversation completion for session {session_id}")
-        
+
         # Get the wrapup message from the scenario
         if session_id in active_sessions:
             dialog = active_sessions[session_id]["dialog"]
-            wrapup_message = dialog.scenario.get("wrapup", {}).get("message", 
+            # C.3 — persist accumulated flags so the clinician summary (A.11) reflects them.
+            try:
+                record_session_flags(session_id, getattr(dialog, "flags", []))
+            except Exception as _e:
+                logger.error(f"Failed to persist session flags: {_e}")
+            wrapup_message = dialog.scenario.get("wrapup", {}).get("message",
                 "Thank you for your time. A member of our care team will review your responses.")
         else:
             wrapup_message = "Thank you for your time. A member of our care team will review your responses."
-        
+
+        # A.2: append the configurable response-time expectation to the spoken wrapup,
+        # and send it as a separate field so the UI can show it on-screen too.
+        response_time_message = build_response_time_message(config)
+        wrapup_message = f"{wrapup_message} {response_time_message}"
+
         logger.info(f"Wrapup message: {wrapup_message}")
         
         if azure_speech and session_id in active_sessions:
@@ -868,6 +1077,7 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                 
                 await websocket.send_text(json.dumps({
                     "type": "completion",
+                    "response_time_message": response_time_message,
                     "text": wrapup_message,
                     "audio_data": audio_base64,
                     "progress": 100.0
@@ -876,6 +1086,7 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                 logger.error(f"TTS failed for completion: {e}")
                 await websocket.send_text(json.dumps({
                     "type": "completion",
+                    "response_time_message": response_time_message,
                     "text": wrapup_message,
                     "progress": 100.0
                 }))

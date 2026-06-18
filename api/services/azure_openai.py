@@ -10,6 +10,8 @@ import openai
 from openai import AsyncAzureOpenAI
 import json
 
+from .prompt_guidelines import assistant_guidelines
+
 logger = logging.getLogger(__name__)
 
 class AzureOpenAIService:
@@ -88,10 +90,13 @@ class AzureOpenAIService:
             messages = [
                 {
                     "role": "system",
-                    "content": system_prompt or """You are a medical AI assistant conducting a stroke recovery follow-up call. 
-                    Use the provided medical knowledge to ask informed follow-up questions. 
-                    Be empathetic, professional, and focused on patient safety. 
+                    "content": system_prompt or (
+                        """You are a medical AI assistant conducting a stroke recovery follow-up call.
+                    Use the provided medical knowledge to ask informed follow-up questions.
+                    Be empathetic, professional, and focused on patient safety.
                     Keep responses concise and conversational."""
+                        + "\n\n" + assistant_guidelines()
+                    )
                 },
                 {
                     "role": "user",

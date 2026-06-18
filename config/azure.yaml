@@ -40,8 +40,10 @@ azure_speech:
     pitch: 0
   stt:
     enable_dictation: true
-    initial_silence_timeout_ms: 5000
-    end_silence_timeout_ms: 2000
+    # A.7 — generous silence tolerance for slow/effortful/aphasic speech.
+    # (Runtime also honors env vars ASR_INITIAL_SILENCE_MS / ASR_END_SILENCE_MS.)
+    initial_silence_timeout_ms: 10000
+    end_silence_timeout_ms: 5000
 
 # Azure AI Search Configuration
 azure_search:
@@ -101,6 +103,22 @@ monitoring:
     workspace_id: "${LOG_ANALYTICS_WORKSPACE_ID}"
     shared_key: "${LOG_ANALYTICS_SHARED_KEY}"
 
+# Translation / limited-English support (A.10) — SCAFFOLD ONLY, disabled.
+# Do NOT enable without professional (human) translation of scenario text and the
+# knowledge base. Machine translation is unsafe for this content. See
+# docs/TRANSLATION_ROADMAP.md. Can also be overridden by env var TRANSLATION_ENABLED.
+translation:
+  enabled: false
+
+# Role / track configuration (A.6). Only framing/wording changes by role;
+# clinical content stays the same across tracks.
+tracks:
+  available:
+    - "survivor"
+    - "caregiver"
+    - "clinician"
+  default: "survivor"
+
 # Session Configuration
 session:
   default_scenario: "guided.yml"
@@ -110,6 +128,16 @@ session:
   session_timeout_minutes: 30
   max_concurrent_sessions: 100
   cleanup_interval_minutes: 5
+
+# Response-time expectations (A.2)
+# Shown on-screen AND spoken at the end of a check-in so patients know this is
+# NOT a real-time/monitored channel. Configurable per deployment.
+# DRAFT CLINICAL TEXT — wording + timeframe require Dr. Zand sign-off
+# (see CLINICAL_REVIEW_NEEDED.md). Change these values per site, no code change.
+response_expectations:
+  monitored_real_time: false
+  routine_response_business_days: 2
+  urgent_instructions: "For anything urgent, call your care team at the number they gave you. If it is an emergency or you have new stroke signs, call 911."
 
 # Audio Processing Configuration
 audio:

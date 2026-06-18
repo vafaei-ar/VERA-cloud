@@ -32,8 +32,33 @@
                 <div class="setup-container">
                     <h2>Welcome to AI Stroke Navigator</h2>
                     <p class="subtitle">Your AI-powered stroke recovery assistant</p>
-                    
+
+                    <!-- A.12: explicit AI identity + standing who-to-call notice.
+                         DRAFT CLINICAL TEXT (the 911 / care-team guidance) — see CLINICAL_REVIEW_NEEDED.md -->
+                    <div class="ai-identity-banner" role="note" aria-label="Important: about this assistant"
+                         style="margin: 0 0 20px; padding: 14px 16px; background: #eef4ff; border: 1px solid #b9d0ff; border-left: 5px solid #2c6ef2; border-radius: 8px; font-size: 16px; line-height: 1.5; color: #1a2b4a;">
+                        <p style="margin: 0 0 8px;"><strong>You are talking with an automated AI assistant — not a person.</strong>
+                        It checks in on how you are doing and shares your answers with your care team.
+                        It is not your nurse or stroke navigator, and it does not give medical advice or make medical decisions.</p>
+                        <p style="margin: 0;"><strong>If you have new stroke signs or an emergency, call 911 right away.</strong>
+                        For urgent questions, call your care team at the number they gave you.</p>
+                    </div>
+
                     <div class="setup-form">
+                        <!-- A.6: role / track selector (large, accessible buttons) -->
+                        <div class="form-group">
+                            <label id="roleLabel">I am the…</label>
+                            <div class="role-buttons" role="group" aria-labelledby="roleLabel"
+                                 style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <button type="button" class="role-btn" data-role="survivor" aria-pressed="true"
+                                        style="flex: 1; min-width: 120px; min-height: 60px; font-size: 17px; border-radius: 10px; border: 2px solid #2c6ef2; background: #e7f0ff; color: #14306b; cursor: pointer;">Stroke survivor</button>
+                                <button type="button" class="role-btn" data-role="caregiver" aria-pressed="false"
+                                        style="flex: 1; min-width: 120px; min-height: 60px; font-size: 17px; border-radius: 10px; border: 2px solid #2c6ef2; background: #fff; color: #14306b; cursor: pointer;">Caregiver</button>
+                                <button type="button" class="role-btn" data-role="clinician" aria-pressed="false"
+                                        style="flex: 1; min-width: 120px; min-height: 60px; font-size: 17px; border-radius: 10px; border: 2px solid #2c6ef2; background: #fff; color: #14306b; cursor: pointer;">Clinician</button>
+                            </div>
+                        </div>
+
                         <div class="form-group">
                             <label for="honorific">Title:</label>
                             <select id="honorific" required>
@@ -48,7 +73,21 @@
                             <label for="patientName">Name (optional):</label>
                             <input type="text" id="patientName" placeholder="Enter your name">
                         </div>
-                        
+
+                        <!-- C.1: optional patient ID (PATID) to load history -->
+                        <div class="form-group">
+                            <label for="patientId">Patient ID (optional):</label>
+                            <input type="text" id="patientId" placeholder="Leave blank for a general check-in">
+                        </div>
+
+                        <!-- C.1: caregiver consent gate (only meaningful for the caregiver track) -->
+                        <div class="form-group" id="consentGroup" style="display:none;">
+                            <label style="display:flex; align-items:center; gap:10px; font-weight:500;">
+                                <input type="checkbox" id="caregiverConsent" style="width:24px; height:24px;">
+                                I have this person's consent to access their health information.
+                            </label>
+                        </div>
+
                         <div class="form-group">
                             <label for="scenario">Conversation Mode:</label>
                             <select id="scenario" required>
@@ -109,10 +148,35 @@
                                     </div>
                                     <div class="mic-level" id="micLevel"></div>
                                 </div>
-                                <div class="mic-status" id="micStatus">Click to speak</div>
+                                <div class="mic-status" id="micStatus">Tap and talk</div>
                             </div>
                         </div>
+
+                        <!-- A.7: minimal voice-driven reminder entry point (no fine motor control needed) -->
+                        <div class="reminder-control" style="margin-top: 12px; text-align: center;">
+                            <button type="button" id="reminderButton" class="btn"
+                                    style="min-height: 60px; font-size: 18px; border-radius: 10px; border: 2px solid #6a3fb5; background: #f3eefc; color: #3a1d6e; cursor: pointer; padding: 0 20px;">
+                                🎙️ Add a reminder by voice
+                            </button>
+                            <div id="reminderStatus" aria-live="polite" style="margin-top: 8px; font-size: 15px; color: #3a1d6e;"></div>
+                        </div>
                         
+                        <!-- A.3: patient self-reported urgency (large, accessible, one-handed) -->
+                        <div class="urgency-control" id="urgencyControl" role="group" aria-label="How urgent does this feel to you?"
+                             style="margin-top: 15px; padding: 14px; background: #fff; border: 1px solid #dee2e6; border-radius: 8px;">
+                            <div style="font-weight: 600; font-size: 17px; margin-bottom: 10px; color: #212529;">How urgent does this feel to you?</div>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <button type="button" class="urgency-btn" data-urgency="routine"
+                                        style="flex: 1; min-width: 110px; min-height: 64px; font-size: 18px; border-radius: 10px; border: 2px solid #2e9e54; background: #fff; color: #14391f; cursor: pointer;">Routine</button>
+                                <button type="button" class="urgency-btn" data-urgency="soon"
+                                        style="flex: 1; min-width: 110px; min-height: 64px; font-size: 18px; border-radius: 10px; border: 2px solid #d29200; background: #fff; color: #5a4100; cursor: pointer;">Soon</button>
+                                <button type="button" class="urgency-btn" data-urgency="urgent"
+                                        style="flex: 1; min-width: 110px; min-height: 64px; font-size: 18px; border-radius: 10px; border: 2px solid #c0392b; background: #fff; color: #5a1a13; cursor: pointer;">Urgent</button>
+                            </div>
+                            <div class="urgency-confirm" id="urgencyConfirm" aria-live="polite"
+                                 style="margin-top: 10px; font-size: 15px; color: #2e7d32;"></div>
+                        </div>
+
                         <!-- Text Input Fallback -->
                         <div class="text-input-fallback" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
                             <label for="textInput" style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">Or type your response:</label>

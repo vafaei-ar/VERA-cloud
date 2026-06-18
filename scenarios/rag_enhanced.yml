@@ -12,14 +12,16 @@ meta:
     emergency_detection: true
 
 greeting:
+  # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+  # (the human-oversight / follow-up line below)
   template: >
-    Good {timeofday} {honorific} {patient_name}. I'm an AI stroke navigator calling from {organization}.
+    Good {timeofday} {honorific} {patient_name}. I'm an automated voice assistant from {organization}.
+    I am a computer program, not a person on your care team.
     I understand you recently had an ischemic stroke and received care at {site}.
     My goal is to gently check in and see how you're doing since leaving the hospital.
-    I'll ask a few questions and listen to what you share. I can also provide some helpful information based on your responses.
+    A member of your care team reviews what you share. If something looks urgent, a real person follows up.
     If you need a moment to think, that's completely okay.
-    I can't answer questions during this call, but I can note any requests for your care team at the end.
-    With your permission, this call will be recorded to help document your care. 
+    With your permission, this call will be recorded to help document your care.
   variables:
     - timeofday     # computed: morning/afternoon/evening
     - honorific     # UI input: "Mr." or "Ms."
@@ -73,7 +75,7 @@ flow:
   
   - key: new_symptoms
     type: free
-    prompt: "Have you noticed any new or worsening symptoms since discharge? This could include weakness, speech problems, vision changes, balance issues, or anything else that concerns you."
+    prompt: "Have you had any new or worse symptoms since you left the hospital? For example: weakness, trouble talking, vision changes, or balance problems. Tell me anything that worries you."
     rag_enhancement:
       search_queries:
         - "stroke warning signs emergency symptoms"
@@ -87,7 +89,7 @@ flow:
   
   - key: pain_fatigue_mood
     type: free
-    prompt: "Are you experiencing any pain, headaches, unusual fatigue, anxiety, or changes in your mood?"
+    prompt: "Are you having any pain or headaches? Do you feel very tired, worried, or down?"
     rag_enhancement:
       search_queries:
         - "stroke recovery pain management"
@@ -102,7 +104,7 @@ flow:
   
   - key: meds_pickup
     type: free
-    prompt: "Were you able to pick up all your prescribed medications from the pharmacy?"
+    prompt: "Were you able to pick up all your medicines from the pharmacy?"
     rag_enhancement:
       search_queries:
         - "medication access pharmacy stroke recovery"
@@ -125,7 +127,7 @@ flow:
   
   - key: meds_adherence
     type: free
-    prompt: "Have you missed any doses of your medications, or have you had trouble taking them as prescribed?"
+    prompt: "Have you missed any doses? Has it been hard to take your medicines the right way?"
     rag_enhancement:
       search_queries:
         - "medication adherence stroke recovery importance"
@@ -137,7 +139,7 @@ flow:
   
   - key: meds_sidefx
     type: free
-    prompt: "Have you noticed any side effects from your medications? This could include dizziness, unusual bleeding, nausea, or any other concerning symptoms."
+    prompt: "Have your medicines caused any side effects? For example: feeling dizzy, bleeding that is not normal, or an upset stomach. Tell me anything that worries you."
     rag_enhancement:
       search_queries:
         - "stroke medication side effects management"
@@ -151,7 +153,7 @@ flow:
   
   - key: fup_scheduled
     type: free
-    prompt: "Have you scheduled follow-up visits with your primary care provider and neurologist as recommended?"
+    prompt: "Have you set up your follow-up visits? This means seeing your regular doctor and your brain doctor, called a neurologist."
     rag_enhancement:
       search_queries:
         - "stroke follow-up care appointments importance"
@@ -162,7 +164,7 @@ flow:
   
   - key: rehab_scheduled
     type: free
-    prompt: "Do you have rehabilitation therapy sessions scheduled? This might include physical therapy, occupational therapy, or speech therapy."
+    prompt: "Do you have any therapy visits set up? This could be physical therapy, daily-task therapy, or speech therapy."
     rag_enhancement:
       search_queries:
         - "stroke rehabilitation therapy importance"
@@ -173,7 +175,7 @@ flow:
   
   - key: transport_help
     type: free
-    prompt: "Do you need help with transportation to your medical appointments?"
+    prompt: "Do you need a ride to your medical visits?"
     rag_enhancement:
       search_queries:
         - "medical transportation stroke patients"
@@ -186,7 +188,7 @@ flow:
   
   - key: lifestyle_adherence
     type: free
-    prompt: "Have you been able to follow any diet or activity recommendations that were given to you at discharge?"
+    prompt: "Have you been able to follow the food and exercise tips from the hospital?"
     rag_enhancement:
       search_queries:
         - "stroke recovery diet recommendations"
@@ -209,7 +211,7 @@ flow:
   
   - key: tobacco_alcohol
     type: free
-    prompt: "Do you currently smoke tobacco or drink alcohol? Has anyone from the care team talked with you about reducing these risk factors?"
+    prompt: "Do you smoke or drink alcohol? Has your care team talked with you about cutting back?"
     rag_enhancement:
       search_queries:
         - "smoking cessation stroke recovery"
@@ -222,7 +224,7 @@ flow:
   
   - key: adl_support
     type: free
-    prompt: "How are you managing your daily activities like walking, bathing, dressing, and cooking? Do you need help with any of these activities?"
+    prompt: "How are you doing with daily tasks like walking, bathing, dressing, and cooking? Do you need help with any of them?"
     rag_enhancement:
       search_queries:
         - "activities of daily living stroke recovery"
@@ -234,7 +236,7 @@ flow:
   
   - key: home_safety
     type: free
-    prompt: "Are there any challenges with mobility or safety in your home? For example, stairs, bathroom access, or concerns about falling?"
+    prompt: "Is anything hard or unsafe at home? For example: stairs, getting to the bathroom, or fear of falling?"
     rag_enhancement:
       search_queries:
         - "home safety stroke recovery"
@@ -258,7 +260,7 @@ flow:
   
   - key: who_to_call
     type: free
-    prompt: "Do you know who to call if you experience new stroke symptoms or have urgent questions about your care?"
+    prompt: "Do you know who to call if you have new stroke signs or an urgent question?"
     rag_enhancement:
       search_queries:
         - "stroke emergency contacts"
@@ -269,7 +271,7 @@ flow:
   
   - key: resources_interest
     type: free
-    prompt: "Would you be interested in information about stroke support groups, counseling services, or community resources?"
+    prompt: "Would you like information about stroke support groups, counseling, or local help?"
     rag_enhancement:
       search_queries:
         - "stroke support groups resources"
@@ -300,23 +302,33 @@ flow:
       follow_up_prompts:
         - "I'll make sure your care team knows about your concerns. Let me also share some additional information that might be helpful..."
 
-wrapup:
-  message: >
-    Thank you for taking the time to speak with me today. I've recorded all of your responses, 
-    and a member of our clinical care team will review them and follow up with you if needed.
-    
-    I hope the information I shared during our conversation was helpful for your recovery journey.
-    
-    Remember, if you experience any new stroke symptoms such as sudden weakness, speech problems, 
-    vision changes, severe headache, or loss of balance, call 911 immediately.
-    
-    For non-urgent questions, you can always contact your primary care provider or our stroke care team.
-    
-    Take care, and thank you again for your time. Goodbye.
+  - key: urgency_self_report
+    type: free
+    # A.3 — patient sets their own urgency. Advisory only; never changes automatic
+    # red-flag routing. The app also offers Routine/Soon/Urgent buttons.
+    prompt: "How urgent does this feel to you today? You can say routine, soon, or urgent."
 
+wrapup:
+  # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+  # (911 guidance and the stroke-sign list below)
+  message: >
+    Thank you for talking with me today. I wrote down what you told me.
+    A member of your care team will look at it and follow up if you need it.
+    I hope the information I shared was helpful.
+
+    Remember: if you have new stroke signs, call 911 right away.
+    These signs include sudden weakness, trouble talking, vision changes,
+    a very bad headache, or loss of balance.
+
+    For questions that are not urgent, you can call your regular doctor
+    or our stroke care team.
+
+    Take care, and thank you again. Goodbye.
+
+# DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
 emergency_disclaimer: >
-  If you are experiencing a medical emergency or new stroke symptoms right now, 
-  please hang up and call 911 immediately.
+  Are you having an emergency or new stroke signs right now?
+  Hang up and call 911 right away.
 
 stroke_warning_signs:
   - "Sudden weakness or numbness in face, arm, or leg, especially on one side"

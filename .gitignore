@@ -212,3 +212,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Cowork planning doc (not app code)
+COWORK_EXECUTION_PLAN.md
+
+# Runtime per-session outcome records (may contain patient context — never commit)
+outcomes/sessions/
+
+# Access audit log (may reference real PATIDs in production — never commit)
+audit/

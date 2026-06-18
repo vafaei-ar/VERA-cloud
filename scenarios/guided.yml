@@ -7,11 +7,15 @@ meta:
   mode: "guided"  # Traditional guided conversation
 
 greeting:
+  # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+  # (the human-oversight / follow-up line below)
   template: >
-    Good {timeofday} {honorific} {patient_name}. I'm an AI stroke navigator calling from {organization}.
+    Good {timeofday} {honorific} {patient_name}. I'm an automated voice assistant from {organization}.
+    I am a computer program, not a person on your care team.
     I understand you recently had an ischemic stroke and received care at {site}.
     My goal is to gently check in and see how you're doing since leaving the hospital.
-    With your permission, this call will be recorded to help document your care. 
+    A member of your care team reviews what you share. If something looks urgent, a real person follows up.
+    With your permission, this call will be recorded to help document your care.
   variables:
     - timeofday     # computed: morning/afternoon/evening
     - honorific     # UI input: "Mr." or "Ms."
@@ -49,23 +53,34 @@ flow:
   
   - key: new_symptoms
     type: free
-    prompt: "Have you noticed any new or worsening symptoms since discharge? "
+    prompt: "Have you had any new or worse symptoms since you left the hospital?"
+
+  - key: urgency_self_report
+    type: free
+    # A.3 — patient sets their own urgency. This is advisory only and never
+    # changes automatic red-flag routing. The app also offers Routine/Soon/Urgent buttons.
+    prompt: "How urgent does this feel to you today? You can say routine, soon, or urgent."
 
 wrapup:
+  # DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
+  # (911 guidance and the stroke-sign list below)
   message: >
-    Thank you for taking the time to speak with me today. I've recorded all of your responses, 
-    and a member of our clinical care team will review them and follow up with you if needed.
-    
-    Remember, if you experience any new stroke symptoms such as sudden weakness, speech problems, 
-    vision changes, severe headache, or loss of balance, call 911 immediately.
-    
-    For non-urgent questions, you can always contact your primary care provider or our stroke care team.
-    
-    Take care, and thank you again for your time. Goodbye.
+    Thank you for talking with me today. I wrote down what you told me.
+    A member of your care team will look at it and follow up if you need it.
 
+    Remember: if you have new stroke signs, call 911 right away.
+    These signs include sudden weakness, trouble talking, vision changes,
+    a very bad headache, or loss of balance.
+
+    For questions that are not urgent, you can call your regular doctor
+    or our stroke care team.
+
+    Take care, and thank you again. Goodbye.
+
+# DRAFT CLINICAL TEXT — REQUIRES DR. ZAND SIGN-OFF — see CLINICAL_REVIEW_NEEDED.md
 emergency_disclaimer: >
-  If you are experiencing a medical emergency or new stroke symptoms right now, 
-  please hang up and call 911 immediately.
+  Are you having an emergency or new stroke signs right now?
+  Hang up and call 911 right away.
 
 stroke_warning_signs:
   - "Sudden weakness or numbness in face, arm, or leg, especially on one side"
