@@ -13,19 +13,22 @@ import json
 from .prompt_guidelines import assistant_guidelines, is_boilerplate_only
 from .roles import normalize_role, greeting_framing, prompt_framing
 from . import flagging
+from .empathy import acknowledge as empathy_ack
 
 logger = logging.getLogger(__name__)
 
 class EnhancedDialog:
     def __init__(self, azure_openai_service, azure_search_service, redis_cache_service,
                  scenario_path: str, honorific: str = "", patient_name: str = "",
-                 role: str = "survivor", patient_context=None):
+                 role: str = "survivor", patient_context=None, empathy: bool = False):
         self.openai = azure_openai_service
         self.search = azure_search_service
         self.cache = redis_cache_service
         self.honorific = honorific
         self.patient_name = patient_name
         self.role = normalize_role(role)  # A.6 — survivor | caregiver | clinician
+        # Optional empathetic acknowledgments (DRAFT). Off unless explicitly enabled.
+        self.empathy = bool(empathy)
         # B.3 — optional PatientContext (None => generic mode, no history-dependent flags)
         self.patient_context = patient_context
         # C.3 — flags accumulated across the session (highest severity wins).
@@ -171,9 +174,20 @@ class EnhancedDialog:
 
             # Process based on mode and question type
             if self.mode == "rag_enhanced" and current_question.get("type") != "confirm":
-                return await self._process_rag_enhanced(user_input, current_question)
+                response = await self._process_rag_enhanced(user_input, current_question)
             else:
-                return await self._process_guided(user_input, current_question)
+                response = await self._process_guided(user_input, current_question)
+
+            # Optional empathy: prepend ONE short acknowledgment to the next
+            # question, when enabled and the patient expressed distress. Never on
+            # consent, completion, emergency, or denial turns. DRAFT.
+            if self.empathy and current_question.get("key") != "consent":
+                skip = {"completion", "emergency", "denial_with_continuation", "error"}
+                ack = empathy_ack(user_input)
+                msg = response.get("message") if isinstance(response, dict) else None
+                if ack and msg and response.get("type") not in skip:
+                    response["message"] = f"{ack} {msg}"
+            return response
                 
         except Exception as e:
             logger.error(f"Failed to process user response: {e}")

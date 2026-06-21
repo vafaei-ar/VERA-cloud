@@ -213,6 +213,7 @@ class StartRequest(BaseModel):
     role: str = "survivor"  # A.6 — survivor | caregiver | clinician
     patient_id: Optional[str] = None      # B.3 — optional PATID
     caregiver_consent: bool = False        # C.1 — consent gate for caregiver role
+    empathy: bool = False                  # optional empathetic acknowledgments (DRAFT)
 
 class HealthResponse(BaseModel):
     status: str
@@ -313,7 +314,8 @@ async def start_session(request: StartRequest):
             honorific=request.honorific,
             patient_name=request.patient_name,
             role=request.role,
-            patient_context=patient_context
+            patient_context=patient_context,
+            empathy=request.empathy,
         )
         
         # Build greeting
@@ -368,6 +370,7 @@ class SessionStartRequest(BaseModel):
     scenario: str = "guided.yml"
     voice: Optional[str] = None
     rate: float = 1.0
+    empathy: bool = False                  # optional empathetic acknowledgments (DRAFT)
 
 
 @app.post("/session/start")
@@ -392,6 +395,7 @@ async def session_start(request: SessionStartRequest):
         role=request.role,
         patient_id=request.patient_id,
         caregiver_consent=request.caregiver_consent,
+        empathy=request.empathy,
     )
     return await start_session(sr)
 
