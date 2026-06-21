@@ -40,6 +40,8 @@ from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 from .services.patient_data import load_patient_context
 from .services.audit import write_access
 from .services.roles import normalize_role
+from .services.flagging import evaluate as flag_evaluate
+from .services import faq as faq_service
 
 # Load configuration
 config_path = Path(__file__).parent.parent / "config" / "azure.yaml"
@@ -939,6 +941,48 @@ async def get_resources(region: Optional[str] = None, need: Optional[str] = None
 async def get_resource_regions():
     """A.8 — list regions available in the resource directory."""
     return {"regions": list_regions(), "needs": list(NEED_CATEGORIES)}
+
+
+class AskRequest(BaseModel):
+    question: str
+
+
+@app.post("/api/ask")
+async def ask_vera(request: AskRequest):
+    """Ask-VERA — RETRIEVAL ONLY. Gated by env ASK_ENABLED (default off).
+    DRAFT, pending clinical sign-off (see Kura docs/ASK_VERA_SPEC.md).
+
+    Pipeline: (1) flag the question first — a red/urgent flag returns safety
+    guidance, never an answer; (2) return a clinician-approved FAQ answer
+    verbatim if one matches; (3) otherwise refuse. No generated medical text.
+    """
+    if os.getenv("ASK_ENABLED", "false").strip().lower() not in ("1", "true", "yes", "on"):
+        raise HTTPException(status_code=403, detail="Ask-VERA is disabled")
+
+    q = (request.question or "").strip()
+    if not q:
+        raise HTTPException(status_code=422, detail="Empty question")
+
+    # 1) Safety: never chat past a red flag described in the question.
+    result = flag_evaluate(q)
+    tier = result.get("overall_tier")
+    if tier == 1:
+        return {"kind": "emergency", "answer": result.get("guidance"), "tier": 1}
+    if tier == 2:
+        return {"kind": "urgent", "answer": result.get("guidance"), "tier": 2}
+
+    # 2) Clinician-approved answer, verbatim.
+    hit = faq_service.lookup(q)
+    if hit:
+        return {
+            "kind": "answer",
+            "answer": hit.get("answer"),
+            "disclaimer": faq_service.disclaimer(),
+            "topic": hit.get("id"),
+        }
+
+    # 3) Refuse anything not approved.
+    return {"kind": "refusal", "answer": faq_service.REFUSAL}
 
 
 # Friendly, role-neutral labels for the patient-facing scenario picker.

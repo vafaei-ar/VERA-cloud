@@ -1,0 +1,61 @@
+# Ask-VERA curated patient FAQ — DRAFT, requires clinician (Dr. Zand) sign-off.
+#
+# RETRIEVAL ONLY: Ask-VERA returns one of these approved answers verbatim, or it
+# refuses. No language model writes patient-facing text. This file is the entire
+# review surface — edit/approve answers here.
+#
+# Matching is deterministic: a question matches an entry if it contains one of
+# the entry's `keywords`. Keep answers short, plain-language, non-diagnostic, and
+# never about a specific patient's case.
+
+disclaimer: >-
+  This is general information, not medical advice. For anything about your own
+  health, contact your care team. If this is an emergency, call 911.
+
+entries:
+  - id: what_is_tia
+    keywords: ["tia", "mini stroke", "mini-stroke", "transient ischemic"]
+    answer: >-
+      A TIA (sometimes called a "mini-stroke") is a brief interruption of blood
+      flow to the brain. The symptoms go away on their own, but a TIA is an
+      important warning sign — please tell your care team if you think you had one.
+
+  - id: warning_signs
+    keywords: ["warning sign", "be-fast", "befast", "signs of stroke", "another stroke", "spot a stroke"]
+    answer: >-
+      A simple way to remember stroke warning signs is BE-FAST: Balance loss,
+      Eyes (vision change), Face drooping, Arm weakness, Speech trouble — Time to
+      call 911. If you notice any of these, call 911 right away.
+
+  - id: fatigue
+    keywords: ["tired", "fatigue", "exhausted", "no energy", "so sleepy"]
+    answer: >-
+      Feeling very tired is common after a stroke and often improves over time
+      with rest, good sleep, and gentle activity. If your tiredness is getting
+      worse or worrying you, let your care team know.
+
+  - id: driving
+    keywords: ["drive", "driving", "can i drive"]
+    answer: >-
+      Whether you can drive again after a stroke depends on your recovery and
+      local rules. Your care team will let you know when it's safe — please check
+      with them before you start driving.
+
+  - id: appointments
+    keywords: ["appointment", "follow up", "follow-up", "next visit", "clinic visit"]
+    answer: >-
+      Your care team arranges follow-up visits to track your recovery. If you're
+      unsure about an upcoming appointment, please contact your care team's office.
+
+  - id: rehab_exercise
+    keywords: ["rehab", "rehabilitation", "exercise", "physical therapy", "get stronger"]
+    answer: >-
+      Rehabilitation and gentle, regular activity are an important part of stroke
+      recovery. Follow the plan your care team or therapist gave you, and ask
+      them before trying new or harder exercises.
+
+  - id: transportation
+    keywords: ["transport", "transportation", "ride", "get to my appointment", "how do i get there"]
+    answer: >-
+      For help getting to appointments, check the "Help & resources" section of
+      this app for local transportation options, or ask your care team's office.
