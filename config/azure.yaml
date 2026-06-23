@@ -138,6 +138,10 @@ response_expectations:
   monitored_real_time: false
   routine_response_business_days: 2
   urgent_instructions: "For anything urgent, call your care team at the number they gave you. If it is an emergency or you have new stroke signs, call 911."
+  # Spoken at the end ONLY when the call is flagged (Tier-1/Tier-2) or the patient
+  # marked it urgent. Deliberately omits the routine "2 business days / not watched
+  # in real time" wording, which is unsafe to read back on a red-flag call.
+  priority_instructions: "Because of what you told me, a member of your care team will be notified to follow up with you. If it is an emergency or you have new stroke signs, call 911 right away."
 
 # Audio Processing Configuration
 audio:

@@ -1103,24 +1103,39 @@ async def test_tts(request: dict):
         logger.error(f"TTS test failed: {e}")
         return {"error": f"TTS failed: {str(e)}"}
 
-def build_response_time_message(cfg: dict) -> str:
+def build_response_time_message(cfg: dict, priority: bool = False) -> str:
     """Build the configurable response-time expectation message (A.2).
 
     Driven by config['response_expectations'] so each deployment can set its own
     timeframe and urgent instructions without code changes.
 
+    When `priority` is True (a Tier-1/Tier-2 flag fired, or the patient marked the
+    check-in urgent), the routine "not watched in real time / reply within N
+    business days" wording is SUPPRESSED — telling a patient who just reported
+    red-flag stroke symptoms to expect a reply in 2 business days is unsafe and
+    contradictory. Instead we surface the urgent/911 instruction only.
+
     # ===== DRAFT CLINICAL LOGIC — REQUIRES DR. ZAND SIGN-OFF =====
     # Rationale: focus group (Laura) feared an unmonitored inbox; set expectations
-    #   plainly and always route urgent issues to a human / 911.
+    #   plainly and always route urgent issues to a human / 911. The priority
+    #   branch ensures the routine timeframe is never read back on a flagged call.
     # Source: focus group June 2026.
     # DO NOT treat the timeframe or urgent wording as clinically validated.
     """
     re_cfg = (cfg or {}).get("response_expectations", {}) or {}
-    days = re_cfg.get("routine_response_business_days", 2)
     urgent = re_cfg.get(
         "urgent_instructions",
         "For anything urgent, call your care team. If it is an emergency, call 911.",
     )
+    if priority:
+        # No routine timeframe and no "not watched in real time" line on a flagged
+        # call — only the escalation instruction.
+        return re_cfg.get(
+            "priority_instructions",
+            f"Because of what you told me, a member of your care team will be "
+            f"notified to follow up. {urgent}",
+        )
+    days = re_cfg.get("routine_response_business_days", 2)
     not_realtime = "" if re_cfg.get("monitored_real_time", False) else \
         "This check-in is not watched in real time. "
     plural = "day" if days == 1 else "days"
@@ -1134,6 +1149,7 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
         logger.info(f"Handling conversation completion for session {session_id}")
 
         # Get the wrapup message from the scenario
+        is_priority = False
         if session_id in active_sessions:
             dialog = active_sessions[session_id]["dialog"]
             # C.3 — persist accumulated flags so the clinician summary (A.11) reflects them.
@@ -1143,12 +1159,25 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                 logger.error(f"Failed to persist session flags: {_e}")
             wrapup_message = dialog.scenario.get("wrapup", {}).get("message",
                 "Thank you for your time. A member of our care team will review your responses.")
+            # A.2/A.3 — a flagged or self-reported-urgent call must NOT hear the
+            # routine "2 business days / not watched in real time" wording.
+            try:
+                tier = dialog.overall_tier() if hasattr(dialog, "overall_tier") else 3
+                is_priority = tier in (1, 2)
+            except Exception:
+                is_priority = False
+            try:
+                outcome = load_outcome(session_id)
+                if (outcome or {}).get("user_reported_urgency") == "urgent":
+                    is_priority = True
+            except Exception:
+                pass
         else:
             wrapup_message = "Thank you for your time. A member of our care team will review your responses."
 
         # A.2: append the configurable response-time expectation to the spoken wrapup,
         # and send it as a separate field so the UI can show it on-screen too.
-        response_time_message = build_response_time_message(config)
+        response_time_message = build_response_time_message(config, priority=is_priority)
         wrapup_message = f"{wrapup_message} {response_time_message}"
 
         logger.info(f"Wrapup message: {wrapup_message}")
