@@ -137,11 +137,18 @@ async def initialize_azure_services():
             index_name=config["azure_search"]["index_name"]
         )
         
-        # Redis Cache
-        redis_cache = RedisCacheService(
-            connection_string=os.getenv("REDIS_CONNECTION_STRING"),
-            ttl_seconds=config["redis"]["ttl_seconds"]
-        )
+        # Redis is an optional performance optimization. Keep the application
+        # functional without a dedicated cache so small/dev deployments avoid
+        # the fixed cost of a managed Redis instance.
+        redis_connection_string = os.getenv("REDIS_CONNECTION_STRING", "").strip()
+        if redis_connection_string:
+            redis_cache = RedisCacheService(
+                connection_string=redis_connection_string,
+                ttl_seconds=config["redis"]["ttl_seconds"]
+            )
+        else:
+            redis_cache = None
+            logger.info("Redis cache disabled (REDIS_CONNECTION_STRING is not set)")
         
     except Exception as e:
         logger.error(f"Failed to initialize Azure services: {e}")
@@ -250,8 +257,12 @@ async def health_check() -> HealthResponse:
         # Check Redis
         services["redis"] = "available" if redis_cache else "disabled"
         
+        # Redis is optional; health reflects only dependencies required to serve
+        # a check-in. Its state remains visible in the response for diagnostics.
+        required_services = ("azure_openai", "azure_speech", "azure_search")
         overall_status = "healthy" if all(
-            status in ["available", "healthy"] for status in services.values()
+            services[name] in ["available", "healthy"]
+            for name in required_services
         ) else "degraded"
         
         return HealthResponse(
