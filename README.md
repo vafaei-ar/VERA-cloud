@@ -210,7 +210,7 @@ VERA-cloud/
 | `AZURE_SPEECH_REGION` | Azure Speech Service region | Yes |
 | `AZURE_SEARCH_ENDPOINT` | Azure AI Search endpoint | Yes |
 | `AZURE_SEARCH_API_KEY` | Azure AI Search API key | Yes |
-| `REDIS_CONNECTION_STRING` | Redis cache connection | Yes |
+| `REDIS_CONNECTION_STRING` | Optional Redis cache connection; omit to disable | No |
 | `APPLICATION_INSIGHTS_CONNECTION_STRING` | App Insights connection | No |
 | `AZURE_STORAGE_CONNECTION_STRING` | Blob storage connection | No |
 
