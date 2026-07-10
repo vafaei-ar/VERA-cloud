@@ -42,7 +42,7 @@ Once created, go to your App Service:
    AZURE_SPEECH_REGION = eastus2
    AZURE_SEARCH_ENDPOINT = your_search_endpoint
    AZURE_SEARCH_API_KEY = your_search_key
-   REDIS_CONNECTION_STRING = your_redis_connection
+   # Optional: omit REDIS_CONNECTION_STRING to run without Redis
    ```
 
 ### Step 5: Configure Deployment

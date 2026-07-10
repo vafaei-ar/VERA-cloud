@@ -28,7 +28,7 @@ Once created, go to Configuration → Application settings and add:
 - `AZURE_SPEECH_REGION`
 - `AZURE_SEARCH_ENDPOINT`
 - `AZURE_SEARCH_API_KEY`
-- `REDIS_CONNECTION_STRING`
+- `REDIS_CONNECTION_STRING` (optional; omit to run without Redis)
 
 ### 4. Enable GitHub Deployment
 1. Go to Deployment Center
