@@ -1,0 +1,66 @@
+version: feedback-draft-2026-09-06
+status: draft
+# Research defaults, NOT clinically validated or a promise of staffed coverage.
+sources:
+  - https://www.stroke.org/en/help-and-support/resource-library/lets-talk-about-stroke/stroke-tia-and-warning-signs
+  - https://www.asha.org/practice/communication-access/
+speech:
+  rate: 0.85
+  silence_seconds: 8
+messages:
+  introduction: "I'm VERA, an automated stroke check-in assistant, not a clinician. This service is not watched in real time. You can type or speak, and stop at any time."
+  consent: "May I save your answers and share them with the care team for this check-in? Say yes or no. Original audio recording is optional and separate."
+  declined: "We will stop here without saving clinical answers. For an emergency, call 911."
+  emergency: "This may be an emergency. Call 911 now. Do not wait for this app or a care-team reply."
+  urgent: "Please contact your care team promptly about this concern. This app cannot guarantee when someone will respond. If this feels like an emergency or you have sudden stroke signs, call 911 now."
+  routine: "This is not a medical assessment or an all-clear. This service is not watched in real time; contact your care team directly if you need help."
+  callback: "A request for human follow-up has been saved. Delivery and response are not guaranteed; contact your care team directly if you need help."
+  symptom_timing: "Is this new or worse, unchanged since your stroke, or are you unsure?"
+  symptom_impact: "When did it begin, and how is it affecting what you can do? You can say unsure or skip."
+  caregiver_support: "How are you managing as a caregiver, and what support would help you?"
+  urgency_choices: "How serious does this feel to you? Routine means no particular concern, soon means you want the team to review a concern, and urgent means you feel you need prompt help. You can also say unsure. This does not change automatic safety alerts. For an emergency, call 911 now."
+education:
+  ischemic: "An ischemic stroke happens when blood flow to part of the brain is blocked."
+  hemorrhagic: "A hemorrhagic stroke happens when a blood vessel bleeds in or around the brain."
+  unknown: "A stroke injures part of the brain. Different types have different causes and treatments. Your care team can explain which type you had."
+routing:
+  emergency: physician
+  urgent: nurse_or_navigator
+  routine: navigator
+  medication: nurse_or_pharmacist
+  rehab: therapist
+response_windows:
+  # Null = no operationally confirmed response commitment. Never invent one.
+  routine_business_days: null
+flagging:
+  # Phrase overrides keyed by rule_id. Omitted rules use version-controlled
+  # defaults. No automatic baseline suppression: a clinician can review each.
+  phrase_overrides: {}
+  bp_urgent_systolic: 180
+  bp_urgent_diastolic: 120
+symptom_followups:
+  enabled: true
+  question_keys: [new_symptoms, general_feeling]
+  max_questions: 2
+  pathways:
+    headache:
+      triggers: [headache, head pain]
+      timing_prompt: "Is this headache new or worse, the usual headache for you, or are you unsure? If it is sudden and very severe, tell me now."
+      impact_prompt: "When did it begin, and how is it affecting your activities? You can say unsure or skip."
+      immediate_terms: [worst, thunderclap, sudden and severe, sudden and very severe]
+      new_or_worse_tier: 2
+      unknown_tier: 2
+    balance:
+      triggers: [dizzy, dizziness, balance, unsteady]
+      timing_prompt: "Is this dizziness or balance change sudden, new or worse, unchanged since your stroke, or are you unsure?"
+      impact_prompt: "When did it begin, and can you move around as you usually do? You can say unsure or skip."
+      immediate_terms: [sudden, suddenly, cannot stand, can't stand]
+      new_or_worse_tier: 2
+      unknown_tier: 2
+    weakness_speech:
+      triggers: [weak, weakness, numb, speech, words]
+      timing_prompt: "Is this weakness or communication difficulty new or worse, unchanged since your stroke, or are you unsure?"
+      impact_prompt: "How does this compare with your usual movement or communication? You can say unsure or skip."
+      immediate_terms: [sudden, suddenly, new on one side, can't move]
+      new_or_worse_tier: 1
+      unknown_tier: 2

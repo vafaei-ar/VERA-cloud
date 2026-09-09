@@ -29,6 +29,24 @@ For YAML/Markdown patient-facing text, the equivalent marker comment is:
 
 ## Review log
 
+### Session 1/2 implementation — 2026-09-07 (all pending)
+
+The active configurable surface is now `config/clinical_policy.yaml`, with a
+version/digest saved per session. Review: headache/balance/weakness-speech
+clarification, new/worse/baseline/unknown handling, all existing phrase rules
+and configurable BP thresholds, emergency/urgent/uncertain-urgency routing,
+short consent and education copy, caregiver support, and optional response targets.
+The default target is null, not an agreed deadline. Review the new cognitive and
+caregiver FAQ entries in `config/faq.yaml`, along with existing entries. Sources
+inform these draft choices; they are not evidence this implementation is clinically valid.
+
+Original recording separately requires data-owner approval of opt-in wording,
+authorized access, seven-day draft retention, backups, and deletion handling.
+Public resource contacts have been source-checked, not confirmed for current
+capacity, coverage, or suitability. See `docs/FEEDBACK_IMPLEMENTATION.md` for
+configuration boundaries and remaining acceptance work. No review is recorded
+as approved by this implementation.
+
 _(Entries appended as work proceeds. Newest at the bottom of each Part.)_
 
 ### Part A

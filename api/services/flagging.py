@@ -27,6 +27,7 @@ No Azure / network dependencies — safe to import and unit test in isolation.
 import re
 import logging
 from typing import Optional, List, Dict, Any
+from .clinical_policy import load_policy
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ GLUCOSE_TERMS = ["shaky", "very sweaty", "cold sweat", "very thirsty",
 BP_URGENT_SYSTOLIC = 180
 BP_URGENT_DIASTOLIC = 120
 
-NEGATIONS = ["no ", "not ", "n't", "without", "denies", "deny", "any ", "haven't",
+NEGATIONS = ["no ", "not ", "n't", "without", "denies", "deny", "haven't",
              "don't have", "do not have"]
 # ===== END DRAFT CLINICAL LOGIC =====
 # ----------------------------------------------------------------------------
@@ -112,11 +113,13 @@ def _negated_near(text: str, phrase: str, window: int = 18) -> bool:
     Conservative — only suppresses when negation is close before the phrase, so we
     still err toward flagging when unsure (safety).
     """
-    idx = text.find(phrase)
-    if idx < 0:
-        return False
-    pre = text[max(0, idx - window):idx]
-    return any(neg in pre for neg in NEGATIONS)
+    # A later affirmative mention must not be hidden by an earlier denial.
+    matches = list(re.finditer(re.escape(phrase), text))
+    def negated(match):
+        pre = text[max(0, match.start() - window):match.start()]
+        pre = re.split(r"[.!?;]|\bbut\b", pre)[-1]
+        return any(neg in pre for neg in NEGATIONS)
+    return bool(matches) and all(negated(match) for match in matches)
 
 
 def _match_rules(text: str, rules) -> List[Dict[str, Any]]:
@@ -137,16 +140,23 @@ def _match_rules(text: str, rules) -> List[Dict[str, Any]]:
     return hits
 
 
-def _tier1(text: str) -> List[Dict[str, Any]]:
-    flags = _match_rules(text, TIER1_RULES)
+def _policy_rules(rules, policy):
+    overrides = policy.get("flagging", {}).get("phrase_overrides", {})
+    return [(*rule[:-1], overrides.get(rule[0], rule[-1])) for rule in rules]
+
+
+def _tier1(text: str, policy) -> List[Dict[str, Any]]:
+    flags = _match_rules(text, _policy_rules(TIER1_RULES, policy))
     for f in flags:
         f["tier"] = TIER_RED
         f["category"] = "neuro_emergency"
     return flags
 
 
-def _tier2(text: str, context: Optional[Any]) -> List[Dict[str, Any]]:
-    flags = _match_rules(text, TIER2_SYMPTOM_RULES)
+def _tier2(text: str, context: Optional[Any], policy) -> List[Dict[str, Any]]:
+    flags = _match_rules(text, _policy_rules(TIER2_SYMPTOM_RULES, policy))
+    sys_threshold = policy.get("flagging", {}).get("bp_urgent_systolic", BP_URGENT_SYSTOLIC)
+    dia_threshold = policy.get("flagging", {}).get("bp_urgent_diastolic", BP_URGENT_DIASTOLIC)
     for f in flags:
         f["tier"] = TIER_URGENT
 
@@ -172,12 +182,12 @@ def _tier2(text: str, context: Optional[Any]) -> List[Dict[str, Any]]:
             flags.append({"tier": TIER_URGENT, "rule_id": "t2_anticoag_missed",
                           "category": "medication",
                           "reason": "On an anticoagulant and reports missed doses (recurrence risk)."})
-        if (max_sys is not None and max_sys >= BP_URGENT_SYSTOLIC) or \
-           (max_dia is not None and max_dia >= BP_URGENT_DIASTOLIC):
+        if (max_sys is not None and max_sys >= sys_threshold) or \
+           (max_dia is not None and max_dia >= dia_threshold):
             flags.append({"tier": TIER_URGENT, "rule_id": "t2_bp_hypertensive_urgency",
                           "category": "bp",
                           "reason": f"Recent BP in hypertensive-urgency range "
-                                    f"(>= {BP_URGENT_SYSTOLIC}/{BP_URGENT_DIASTOLIC})."})
+                                    f"(>= {sys_threshold}/{dia_threshold})."})
         if "diabetes" in comorbid and any(_contains(text, t) and not _negated_near(text, t)
                                           for t in GLUCOSE_TERMS):
             flags.append({"tier": TIER_URGENT, "rule_id": "t2_glucose",
@@ -188,20 +198,13 @@ def _tier2(text: str, context: Optional[Any]) -> List[Dict[str, Any]]:
 
 # ===== DRAFT CLINICAL LOGIC — REQUIRES DR. ZAND SIGN-OFF =====
 # Plain-language guidance messages per tier (A.9). DRAFT wording.
-GUIDANCE = {
-    TIER_RED: ("This may be an emergency. Please hang up and call 911 right now. "
-               "Your care team will also be alerted."),
-    TIER_URGENT: ("Thank you for sharing this. Your care team should look at this "
-                  "soon — the same day or the next business day. If anything gets "
-                  "worse or feels like an emergency, call 911."),
-    TIER_ROUTINE: ("Thank you. Nothing here needs urgent attention. Your care team "
-                   "will review your check-in as part of routine follow-up."),
-}
+GUIDANCE = {tier: load_policy()["messages"][key] for tier, key in
+            ((1, "emergency"), (2, "urgent"), (3, "routine"))}
 # ===== END DRAFT CLINICAL LOGIC =====
 
 
 def evaluate(user_text: str, context: Optional[Any] = None,
-             user_urgency: Optional[str] = None) -> Dict[str, Any]:
+             user_urgency: Optional[str] = None, policy=None) -> Dict[str, Any]:
     """Evaluate flags for a patient's response.
 
     Returns a dict with the overall tier, the list of flags (each citing the rule
@@ -214,13 +217,14 @@ def evaluate(user_text: str, context: Optional[Any] = None,
     text = (user_text or "").lower()
     flags: List[Dict[str, Any]] = []
 
-    tier1 = _tier1(text)
+    policy = policy or load_policy()
+    tier1 = _tier1(text, policy)
     flags.extend(tier1)
 
     # Tier-2 only matters if there is no Tier-1 emergency in play, but we still
     # record them; the overall tier is the most severe (lowest number).
     if not tier1:
-        flags.extend(_tier2(text, context))
+        flags.extend(_tier2(text, context, policy))
 
     if flags:
         overall = min(f["tier"] for f in flags)
@@ -229,10 +233,11 @@ def evaluate(user_text: str, context: Optional[Any] = None,
         flags.append({"tier": TIER_ROUTINE, "rule_id": "t3_routine",
                       "category": "routine", "reason": "No red or urgent flags detected."})
 
+    messages = policy["messages"]
     return {
         "overall_tier": overall,
         "flags": flags,
-        "guidance": GUIDANCE.get(overall, GUIDANCE[TIER_ROUTINE]),
+        "guidance": messages[{1: "emergency", 2: "urgent", 3: "routine"}[overall]],
         "user_reported_urgency": user_urgency,  # advisory only; never lowers tier
         "tier1_independent": True,
     }

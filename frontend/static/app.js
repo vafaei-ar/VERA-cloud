@@ -209,6 +209,7 @@ class VERACloudApp {
             
             const sessionData = await response.json();
             this.sessionId = sessionData.session_id;
+            this.sessionToken = sessionData.session_token;
             this.ragEnabled = sessionData.mode === 'rag_enhanced';
             
             // Connect WebSocket
@@ -340,7 +341,7 @@ class VERACloudApp {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws/audio/${this.sessionId}`;
             
-            this.websocket = new WebSocket(wsUrl);
+            this.websocket = this.sessionToken ? new WebSocket(wsUrl, ['vera', this.sessionToken]) : new WebSocket(wsUrl);
             
             this.websocket.onopen = () => {
                 console.log('WebSocket connected successfully');
@@ -431,7 +432,13 @@ class VERACloudApp {
                 this.showRAGContext(message);
                 break;
             case 'emergency_alert':
+                this.autoListen = false;
                 this.showEmergencyAlert(message);
+                break;
+            case 'session_ended':
+                this.autoListen = false;
+                this.addTranscriptMessage(message.text || 'This check-in has stopped.', 1.0, true, 'bot');
+                if (this.websocket) this.websocket.close();
                 break;
             case 'session_summary':
                 this.showSessionSummary(message);
