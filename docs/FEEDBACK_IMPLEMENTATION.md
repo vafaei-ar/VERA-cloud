@@ -57,6 +57,10 @@ replace security or clinical review. Example variable names are in `.env.example
 
 ## Verify
 
+CI runs on pull requests and main/feature pushes without deploying. Azure release
+requires a manual main run, exact SHA and `DEPLOY VERA` confirmation, then passing
+checks. See [Manual release](MANUAL_RELEASE.md) for paired readiness and rollback.
+
 The communication-preferences increment accepts validated nonclinical interaction
 settings on `/session/start`, retains them in the outcome, and reports actual TTS
 rate in the WS greeting. Settings never change automatic safety evaluation or

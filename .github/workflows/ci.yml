@@ -1,0 +1,43 @@
+name: VERA CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'feat/**']
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOYMENT_MODE: development
+      AUDIO_RECORDING_ENABLED: 'false'
+      ASK_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run backend tests
+        env:
+          OUTCOMES_PATH: ${{ runner.temp }}/vera-test-outcomes
+        run: python -m pytest tests/ -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check web-client JavaScript syntax
+        run: node --check frontend/static/app.js
