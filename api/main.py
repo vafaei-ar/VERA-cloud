@@ -4,12 +4,16 @@ Azure-optimized version of VERA with cloud services
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import uuid
-from datetime import datetime
+import re
+import wave
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, List
+from typing import Literal
 import yaml
 import json
 from dotenv import load_dotenv
@@ -23,6 +27,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
+from pydantic import Field, ConfigDict
+from contextlib import suppress
 from contextlib import asynccontextmanager
 
 # Import Azure services
@@ -35,7 +41,13 @@ from .services.outcomes import (
     record_user_urgency, USER_URGENCY_VALUES,
     load_outcome, build_clinician_summary, record_field_action,
     record_reminder, record_session_flags,
+    record_progress, outcome_exists,
+    record_ask,
 )
+from .services.outbox import run_dispatcher
+from .services.clinical_policy import load_policy, response_message
+from .services import session_auth
+from .services import audio_store
 from .services.resources import lookup_resources, list_regions, NEED_CATEGORIES
 from .services.patient_data import load_patient_context
 from .services.audit import write_access
@@ -89,6 +101,18 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     logger.info("Starting VERA Cloud API...")
+    if session_auth.secured() and len(os.getenv("VERA_SERVICE_KEY", "")) < 32:
+        raise RuntimeError("Secure deployments require a VERA_SERVICE_KEY of at least 32 characters")
+    if audio_store.enabled() and not session_auth.secured():
+        raise RuntimeError("Original audio recording requires service authentication")
+    policy = load_policy()
+    if os.getenv("DEPLOYMENT_MODE") == "production":
+        if policy["status"] != "approved" or not policy.get("reviewed_by") or not policy.get("reviewed_at"):
+            raise RuntimeError("Production requires recorded clinical policy approval; use draft settings only for synthetic development")
+        if faq_service._load().get("status") != "approved":
+            raise RuntimeError("Production requires reviewed FAQ content, including in-session answers")
+        if not os.getenv("KURA_EVENT_URL", "").startswith("https://") or len(os.getenv("KURA_EVENT_KEY", "")) < 32:
+            raise RuntimeError("Production requires authenticated HTTPS outcome delivery")
     
     try:
         # Initialize Azure services
@@ -101,7 +125,13 @@ async def lifespan(app: FastAPI):
             logger.info("Caches warmed up successfully")
         
         logger.info("VERA Cloud API started successfully")
-        yield
+        dispatcher = asyncio.create_task(run_dispatcher())
+        try:
+            yield
+        finally:
+            dispatcher.cancel()
+            with suppress(asyncio.CancelledError):
+                await dispatcher
         
     except Exception as e:
         logger.error(f"Failed to start VERA Cloud API: {e}")
@@ -195,6 +225,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+
+@app.middleware("http")
+async def service_authentication(request: Request, call_next):
+    path = request.url.path
+    public = path in {"/", "/health", "/api/capabilities", "/api/scenarios", "/api/voices", "/api/resources", "/api/resource-regions"} or path.startswith("/static/")
+    if session_auth.secured() and not public and not session_auth.service_authorized(request.headers.get("authorization")):
+        return JSONResponse({"detail": "Service authentication required"}, status_code=401)
+    return await call_next(request)
+
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
@@ -211,12 +250,27 @@ if config["performance"]["enable_compression"]:
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
 # Pydantic models
+class CommunicationPreferences(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    communication_difficulty: Literal["not_recorded", "no", "yes", "unsure"] = "not_recorded"
+    support_preference: Literal["independent", "helper", "staff", "unsure"] = "independent"
+    text_only: bool = False
+    speech_rate: float = Field(default=0.85, ge=0.6, le=1.2)
+    manual_finish: bool = True
+    review_before_sending: bool = True
+    silence_seconds: int = Field(default=8, ge=3, le=30)
+
+
 class StartRequest(BaseModel):
     honorific: str
     patient_name: str
     scenario: str = "guided.yml"
     voice: Optional[str] = None
-    rate: float = 1.0
+    rate: Optional[float] = Field(default=None, ge=0.5, le=1.5)
+    stroke_type: str = "unknown"
+    audio_consent: bool = False
+    respondent_id: Optional[str] = None
+    communication_preferences: Optional[CommunicationPreferences] = None
     role: str = "survivor"  # A.6 — survivor | caregiver | clinician
     patient_id: Optional[str] = None      # B.3 — optional PATID
     caregiver_consent: bool = False        # C.1 — consent gate for caregiver role
@@ -232,6 +286,87 @@ class UrgencyRequest(BaseModel):
     # A.3 — patient self-reported urgency: "routine" | "soon" | "urgent"
     urgency: str
     role: Optional[str] = None
+
+
+class StopRequest(BaseModel):
+    state: Literal["declined", "withdrawn"] = "declined"
+
+
+class RecordingConsentRequest(BaseModel):
+    accepted: bool
+
+
+@app.get("/api/capabilities")
+async def capabilities():
+    return {"original_audio": audio_store.enabled() and session_auth.secured(),
+            "audio_retention_days": min(30, max(1, int(os.getenv("AUDIO_RETENTION_DAYS", "7"))))}
+
+
+@app.post("/api/session/{session_id}/recording-consent")
+async def recording_consent(session_id: str, body: RecordingConsentRequest):
+    try:
+        record = audio_store.set_consent(session_id, body.accepted)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if session_id in active_sessions:
+        active_sessions[session_id]["audio_consent"] = body.accepted
+    return {"accepted": record["audio_consent"]}
+
+
+@app.post("/api/session/{session_id}/audio/{clip_id}")
+async def upload_original_audio(session_id: str, clip_id: str, request: Request):
+    # Separate HTTP path: emergency transcript processing never waits for WAV bytes.
+    if not session_auth.service_authorized(request.headers.get("authorization")):
+        raise HTTPException(401, "Service authentication required")
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > audio_store.MAX_BYTES:
+            raise HTTPException(413, "Recording too large")
+    try:
+        clip = audio_store.store_clip(session_id, clip_id, bytes(content),
+            request.headers.get("x-audio-partial") == "true", acknowledged_turn=True)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (ValueError, EOFError, wave.Error) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"stored": True, "clip_id": clip["id"]}
+
+
+@app.get("/api/session/{session_id}/audio/{clip_id}")
+async def original_audio(session_id: str, clip_id: str, request: Request):
+    if not session_auth.service_authorized(request.headers.get("authorization")):
+        raise HTTPException(401, "Service authentication required")
+    try:
+        path = audio_store.authorized_playback(session_id, clip_id, request.headers.get("x-reviewer", "service")[:128])
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(404, "Original recording unavailable") from exc
+    return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/session/{session_id}/stop")
+async def stop_session(session_id: str, request: StopRequest):
+    if not outcome_exists(session_id):
+        raise HTTPException(404, "Unknown session")
+    record = load_outcome(session_id)
+    if record.get("state") in {"completed", "declined", "withdrawn", "escalated"}:
+        return build_clinician_summary(record)
+    state = "withdrawn" if record.get("consent") == "accepted" else "declined"
+    session = active_sessions.get(session_id)
+    if session:
+        dialog = session["dialog"]
+        dialog.terminal_state = state
+        if state == "declined":
+            dialog.consent = "declined"
+        record = record_progress(session_id, dialog, state=state)
+    else:
+        record = record_progress(session_id, state=state)
+    connection = websocket_connections.get(session_id)
+    if connection:
+        with suppress(Exception):
+            await connection.send_json({"type": "session_ended", "state": state, "text": "This session has been stopped."})
+            await connection.close(code=1008)
+    return build_clinician_summary(record)
 
 # Routes
 @app.get("/")
@@ -267,7 +402,7 @@ async def health_check() -> HealthResponse:
         
         return HealthResponse(
             status=overall_status,
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             services=services,
             version="2.0.0"
         )
@@ -276,7 +411,7 @@ async def health_check() -> HealthResponse:
         logger.error(f"Health check failed: {e}")
         return HealthResponse(
             status="unhealthy",
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             services={"error": str(e)},
             version="2.0.0"
         )
@@ -328,21 +463,34 @@ async def start_session(request: StartRequest):
             patient_context=patient_context,
             empathy=request.empathy,
         )
+        dialog.stroke_type = request.stroke_type if request.stroke_type in dialog.policy["education"] else "unknown"
+        session_token, token_metadata = session_auth.issue_session_token()
+        record_progress(session_id, dialog, state="awaiting_consent", audio_consent=request.audio_consent,
+                        patient_id=request.patient_id, respondent_id=request.respondent_id,
+                        respondent_role=dialog.role, caregiver_consent=request.caregiver_consent,
+                        stroke_type=dialog.stroke_type, voice=request.voice,
+                        rate=request.rate or dialog.policy["speech"]["rate"], scenario=request.scenario,
+                        communication_preferences=request.communication_preferences.model_dump() if request.communication_preferences else None,
+                        context_loaded=context_loaded, **token_metadata)
         
         # Build greeting
         greeting_text = dialog.build_greeting()
+        first_question = dialog.get_current_question()
+        if first_question:
+            greeting_text += " " + first_question["prompt"]
         
         # Store session
         active_sessions[session_id] = {
             "dialog": dialog,
             "voice": request.voice,
-            "rate": request.rate,
+            "rate": request.rate or dialog.policy["speech"]["rate"],
+            "audio_consent": request.audio_consent,
             "role": dialog.role,
             "patient_id": request.patient_id,
             "context_loaded": context_loaded,
             "caregiver_consent": request.caregiver_consent,
             "consent_note": consent_note,
-            "start_time": datetime.now().isoformat(),
+            "start_time": datetime.now(timezone.utc).isoformat(),
             "scenario": request.scenario
         }
         
@@ -350,13 +498,14 @@ async def start_session(request: StartRequest):
         conversation_data[session_id] = {
             "audio_segments": [],
             "transcript": [],
-            "start_time": datetime.now().isoformat()
+            "start_time": datetime.now(timezone.utc).isoformat()
         }
         
-        logger.info(f"Started session {session_id} for {request.honorific} {request.patient_name}")
+        logger.info("Started session %s", session_id)
         
         return {
             "session_id": session_id,
+            "session_token": session_token,
             "greeting_text": greeting_text,
             "scenario": request.scenario,
             "mode": dialog.mode,
@@ -367,6 +516,8 @@ async def start_session(request: StartRequest):
             "consent_note": consent_note
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to start session: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
@@ -380,7 +531,11 @@ class SessionStartRequest(BaseModel):
     honorific: str = ""
     scenario: str = "guided.yml"
     voice: Optional[str] = None
-    rate: float = 1.0
+    rate: Optional[float] = Field(default=None, ge=0.5, le=1.5)
+    stroke_type: str = "unknown"
+    audio_consent: bool = False
+    respondent_id: Optional[str] = None
+    communication_preferences: Optional[CommunicationPreferences] = None
     empathy: bool = False                  # optional empathetic acknowledgments (DRAFT)
 
 
@@ -407,8 +562,72 @@ async def session_start(request: SessionStartRequest):
         patient_id=request.patient_id,
         caregiver_consent=request.caregiver_consent,
         empathy=request.empathy,
+        stroke_type=request.stroke_type,
+        audio_consent=request.audio_consent,
+        respondent_id=request.respondent_id,
+        communication_preferences=request.communication_preferences,
     )
     return await start_session(sr)
+
+
+def _answer_request_digest(data):
+    """Bind a retry to its exact answer/provenance, not just a client-chosen ID.
+
+    This is internal protected session metadata, not anonymized data. Missing
+    optional values use the same defaults as the answer handler.
+    """
+    payload = {"text": data["text"], "original_transcript": data.get("original_transcript"),
+               "expects_audio": data.get("expects_audio", False)}
+    if data.get("expected_context") is not None:
+        payload["expected_context"] = data["expected_context"]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                                    separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _answer_context(dialog):
+    return hashlib.sha256(json.dumps(dialog.snapshot(), sort_keys=True,
+                                    ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+class AnswerRecoveryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["text_input"] = "text_input"
+    message_id: str = Field(min_length=1, max_length=128, pattern=r"\S")
+    text: str = Field(min_length=1, max_length=8000)
+    original_transcript: Optional[str] = Field(default=None, max_length=8000)
+    expects_audio: bool = False
+    expected_context: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    request_receipt: bool = True
+
+
+@app.post("/api/session/{session_id}/answer-receipt")
+async def answer_receipt(session_id: str, body: AnswerRecoveryRequest):
+    """Service-authenticated, read-only reconciliation, including terminal sessions."""
+    if not outcome_exists(session_id):
+        raise HTTPException(404, "Unknown check-in")
+    record = load_outcome(session_id)
+    snapshot = record.get("dialog_snapshot", {})
+    prior = snapshot.get("state", {}).get("turn_receipts", {}).get(body.message_id)
+    status = "missing"
+    if prior is not None:
+        status = ("unverifiable" if not prior.get("_request_digest") else
+                  "accepted" if prior["_request_digest"] == _answer_request_digest(body.model_dump()) else "conflict")
+    can_retry = False
+    if status == "missing" and record.get("state") not in {"completed", "declined", "withdrawn", "escalated"}:
+        import time
+        if record.get("session_token_expires", 0) > time.time():
+            try:
+                restored = EnhancedDialog.restore(snapshot)
+                can_retry = body.expected_context is not None and body.expected_context == _answer_context(restored)
+            except (KeyError, TypeError, ValueError):
+                pass
+    state = record.get("state", "unknown")
+    message = None
+    if state == "escalated":
+        message = record.get("policy", {}).get("messages", {}).get("emergency")
+    return JSONResponse({"message_id": body.message_id, "status": status, "saved": status == "accepted",
+                         "state": state, "can_retry": can_retry, "message": message},
+                        headers={"Cache-Control": "no-store"})
 
 
 @app.websocket("/ws/audio/{session_id}")
@@ -417,12 +636,41 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
     logger.info(f"WebSocket connection attempt for session {session_id}")
     logger.info(f"Active sessions: {list(active_sessions.keys())}")
     
-    if session_id not in active_sessions:
-        logger.error(f"Session {session_id} not found in active sessions")
+    if not outcome_exists(session_id):
         await websocket.close(code=1008, reason="Session not found")
         return
+    if session_id in websocket_connections:
+        await websocket.close(code=1008, reason="Session already connected")
+        return
+    token = websocket.headers.get("authorization", "").removeprefix("Bearer ")
+    protocols = [p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",")]
+    if not token and len(protocols) == 2 and protocols[0] == "vera":
+        token = protocols[1]
+    if session_auth.secured() and not session_auth.session_authorized(token, load_outcome(session_id)):
+        await websocket.close(code=1008, reason="Session access expired or invalid")
+        return
+    record = load_outcome(session_id)
+    if record.get("state") in {"completed", "declined", "withdrawn", "escalated"}:
+        await websocket.close(code=1008, reason="Check-in has ended")
+        return
+    resumed = session_id not in active_sessions
+    if resumed:
+        try:
+            dialog = EnhancedDialog.restore(record["dialog_snapshot"], azure_openai, azure_search, redis_cache)
+            active_sessions[session_id] = {"dialog": dialog, "voice": record.get("voice"),
+                "rate": record.get("rate", dialog.policy["speech"]["rate"]),
+                "audio_consent": record.get("audio_consent", False), "role": dialog.role,
+                "patient_id": record.get("patient_id"), "context_loaded": record.get("context_loaded", False),
+                "caregiver_consent": record.get("caregiver_consent", False), "scenario": record.get("scenario"),
+                "start_time": dialog.session_context["start_time"]}
+            conversation_data[session_id] = {"audio_segments": [], "transcript": [],
+                                            "start_time": dialog.session_context["start_time"]}
+            record_progress(session_id, dialog, state="in_progress" if dialog.consent == "accepted" else "awaiting_consent")
+        except (KeyError, TypeError, ValueError):
+            await websocket.close(code=1008, reason="Cannot resume this version; ask the care team for a new check-in")
+            return
     
-    await websocket.accept()
+    await websocket.accept(subprotocol="vera" if protocols and protocols[0] == "vera" else None)
     websocket_connections[session_id] = websocket
     logger.info(f"WebSocket connected for session {session_id}")
     
@@ -433,7 +681,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
         rate = session["rate"]
         
         # Send initial greeting with TTS
-        greeting_text = dialog.build_greeting()
+        greeting_text = ("Welcome back. We saved your place. " if resumed else dialog.build_greeting() + " ") + dialog.current_prompt()
         greeting_audio_duration = 0
         
         # Generate TTS audio for greeting
@@ -449,7 +697,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
 
                 # Store audio segment with sequence number
                 if session_id in conversation_data:
-                    timestamp = datetime.now().isoformat()
+                    timestamp = datetime.now(timezone.utc).isoformat()
                     sequence = len(conversation_data[session_id]["audio_segments"])
                     conversation_data[session_id]["audio_segments"].append({
                         "type": "bot",
@@ -462,14 +710,15 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                     conversation_data[session_id]["transcript"].append({
                         "speaker": "bot",
                         "text": greeting_text,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     })
 
                 await websocket.send_text(json.dumps({
                     "type": "audio",
                     "text": greeting_text,
                     "audio_data": audio_base64,
-                    "progress": 0
+                    "progress": dialog.get_progress_percentage(), "consent": dialog.consent, "resumed": resumed, "speech_rate": rate,
+                    "answer_recovery": 1, "answer_context": _answer_context(dialog)
                 }))
             except Exception as e:
                 logger.error(f"TTS failed: {e}")
@@ -477,80 +726,24 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                     "type": "greeting",
                     "text": greeting_text,
                     "message": "Welcome to VERA Cloud! (TTS temporarily unavailable)",
-                    "progress": 0
+                    "progress": dialog.get_progress_percentage(), "consent": dialog.consent, "resumed": resumed, "speech_rate": rate,
+                    "answer_recovery": 1, "answer_context": _answer_context(dialog)
                 }))
         else:
             await websocket.send_text(json.dumps({
                 "type": "greeting",
                 "text": greeting_text,
                 "message": "Welcome to VERA Cloud! Voice features are currently in development mode.",
-                "progress": 0
+                "progress": dialog.get_progress_percentage(), "consent": dialog.consent, "resumed": resumed, "speech_rate": rate,
+                "answer_recovery": 1, "answer_context": _answer_context(dialog)
             }))
         
-        # Calculate dynamic delay based on audio duration
-        if greeting_audio_duration > 0:
-            # Use actual audio duration
-            dynamic_delay = max(greeting_audio_duration + 0.5, 3)  # Add 1.5s buffer, minimum 3s
-            logger.info(f"Audio duration: {greeting_audio_duration:.1f}s, waiting {dynamic_delay:.1f}s total")
-        else:
-            # Fallback to text-based estimation
-            text_duration = len(greeting_text) * 0.08  # ~0.08 seconds per character
-            dynamic_delay = max(text_duration + 1, 3)
-            logger.info(f"Text-based estimate: {dynamic_delay:.1f}s (text length: {len(greeting_text)} chars)")
-        
-        await asyncio.sleep(dynamic_delay)
-        
-        # Send first question after greeting
-        first_question = dialog.get_current_question()
-        if first_question:
-            question_text = first_question["prompt"]
-            logger.info(f"Sending first question: {question_text}")
-            if azure_speech:
-                try:
-                    audio_data = await azure_speech.synthesize_text(question_text, voice=voice, rate=rate)
-                    import base64
-                    audio_base64 = base64.b64encode(audio_data).decode('utf-8') if isinstance(audio_data, bytes) else audio_data
-                    
-                    # Store audio segment with sequence number
-                    if session_id in conversation_data:
-                        timestamp = datetime.now().isoformat()
-                        sequence = len(conversation_data[session_id]["audio_segments"])
-                        conversation_data[session_id]["audio_segments"].append({
-                            "type": "bot",
-                            "text": question_text,
-                            "audio_data": audio_base64,
-                            "timestamp": timestamp,
-                            "sequence": sequence
-                        })
-                        logger.info(f"Stored bot audio segment {sequence} for session {session_id}: {question_text[:50]}... at {timestamp}")
-                        conversation_data[session_id]["transcript"].append({
-                            "speaker": "bot",
-                            "text": question_text,
-                            "timestamp": datetime.now().isoformat()
-                        })
-                    
-                    await websocket.send_text(json.dumps({
-                        "type": "audio",
-                        "text": question_text,
-                        "audio_data": audio_base64,
-                        "progress": 0
-                    }))
-                except Exception as e:
-                    logger.error(f"TTS failed for question: {e}")
-                    await websocket.send_text(json.dumps({
-                        "type": "response",
-                        "text": question_text,
-                        "status": "question",
-                        "progress": 0
-                    }))
-            else:
-                await websocket.send_text(json.dumps({
-                    "type": "response",
-                    "text": question_text,
-                    "status": "question",
-                    "progress": 0
-                }))
-        
+        # Crash after the last answer's durable write but before completion:
+        # finish from saved state without asking for an extra clinical answer.
+        if dialog.is_complete():
+            await handleConversationComplete(session_id, websocket)
+            return
+
         # Message processing loop
         while True:
             try:
@@ -571,14 +764,14 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                             logger.info(f"Received user audio data: {len(audio_data)} bytes")
                             
                             # Store user audio temporarily until text response is processed
-                            websocket._pending_user_audio = audio_data
+                            if dialog.consent == "accepted" and active_sessions[session_id].get("audio_consent") and len(audio_data) <= 10_000_000:
+                                websocket._pending_user_audio = audio_data
                             logger.info(f"Stored pending user audio for session {session_id}: {len(audio_data)} bytes")
                             
                             # Acknowledge audio receipt
                             if websocket.client_state == websocket.client_state.CONNECTED:
                                 await websocket.send_text(json.dumps({
-                                    "type": "response",
-                                    "text": "I received your audio message. Processing...",
+                                    "type": "audio_receipt",
                                     "status": "audio_received"
                                 }))
                             continue
@@ -596,22 +789,82 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                         data = json.loads(message_text)
                     except json.JSONDecodeError:
                         # Handle non-JSON text messages
-                        logger.info(f"Received plain text: {message_text}")
+                        logger.info("Rejected non-JSON input")
                         await websocket.send_text(json.dumps({
                             "type": "response",
-                            "text": f"Thank you for saying: '{message_text}'. This is a test response.",
+                            "text": "Please use the answer controls to send a response.",
                             "status": "received"
                         }))
                         continue
                     
+                    if data.get("type") == "audio_segment":
+                        if session_auth.secured() and not session_auth.session_authorized(token, load_outcome(session_id)):
+                            await websocket.close(code=1008)
+                            break
+                        try:
+                            import base64
+                            encoded = data.get("audio_data", "")
+                            if not isinstance(encoded, str) or len(encoded) > 14_000_000:
+                                raise ValueError("Recording too large")
+                            clip = audio_store.store_clip(session_id, data.get("message_id", ""),
+                                base64.b64decode(encoded, validate=True), bool(data.get("partial", False)))
+                            await websocket.send_json({"type": "audio_receipt", "stored": True, "clip_id": clip["id"]})
+                        except Exception:
+                            logger.warning("Original audio was not stored for %s", session_id)
+                            await websocket.send_json({"type": "audio_receipt", "stored": False})
+                        continue
+
                     if data.get("type") == "text_input":
+                        if session_auth.secured() and not session_auth.session_authorized(token, load_outcome(session_id)):
+                            await websocket.close(code=1008, reason="Session access expired or revoked")
+                            break
                         # Handle text input
                         user_text = data.get("text", "")
-                        logger.info(f"Received text input: '{user_text}' (length: {len(user_text)})")
+                        if not isinstance(user_text, str) or not user_text.strip() or len(user_text) > 8000:
+                            await websocket.send_json({"type": "error", "message": "Please send a nonempty answer under 8,000 characters."})
+                            continue
+                        logger.info("Received answer for session %s", session_id)
+                        message_id = data.get("message_id")
+                        if message_id is not None and (not isinstance(message_id, str) or not message_id.strip() or len(message_id) > 128):
+                            await websocket.send_json({"type": "error", "message": "Invalid answer identifier"})
+                            continue
+                        original = data.get("original_transcript")
+                        if ((original is not None and (not isinstance(original, str) or len(original) > 8000))
+                                or not isinstance(data.get("expects_audio", False), bool)):
+                            await websocket.send_json({"type": "error", "message": "Invalid answer metadata"})
+                            continue
+                        request_digest = _answer_request_digest(data)
+                        if message_id and message_id in dialog.turn_receipts:
+                            prior = dialog.turn_receipts[message_id]
+                            if prior.get("_request_digest") is None:
+                                # Old snapshots cannot prove which request was saved.
+                                # Never guess or process an ambiguous retry as a new turn.
+                                await websocket.send_json({"type": "error", "code": "retry_identity_unavailable",
+                                    "message_id": message_id,
+                                    "message": "This older answer cannot be verified as a retry. Reconnect to your saved place; do not resend it as a new answer."})
+                            elif prior["_request_digest"] != request_digest:
+                                await websocket.send_json({"type": "error", "code": "answer_id_conflict",
+                                    "message_id": message_id,
+                                    "message": "This answer identifier was already used for different content. Your new answer was not saved. Please reconnect to your saved place."})
+                            else:
+                                # An older receipt may precede several accepted turns.
+                                # Return the current prompt, not the stale next question.
+                                await websocket.send_json({"type": "response", "text": dialog.current_prompt(),
+                                    "duplicate": True, "saved": True, "message_id": message_id,
+                                    "consent": dialog.consent, "answer_context": _answer_context(dialog)})
+                            continue
+                        if data.get("expected_context") is not None and data["expected_context"] != _answer_context(dialog):
+                            await websocket.send_json({"type": "error", "code": "question_changed",
+                                "message_id": message_id, "message": "The saved question has changed. This answer was not submitted. Please contact the study team if you need help."})
+                            continue
+                        if dialog.consent == "accepted" and isinstance(original, str) and len(original) <= 8000 and original != user_text:
+                            dialog.transcription_reviews.append({"message_id": message_id, "original": original,
+                                "corrected": user_text, "at": datetime.now(timezone.utc).isoformat()})
                         
-                        # Store user input in transcript
-                        if session_id in conversation_data:
-                            timestamp = datetime.now().isoformat()
+                        # Never retain pre-consent clinical content or raw audio
+                        # without the independent original-audio opt-in.
+                        if dialog.consent == "accepted" and session_id in conversation_data:
+                            timestamp = datetime.now(timezone.utc).isoformat()
                             conversation_data[session_id]["transcript"].append({
                                 "speaker": "user",
                                 "text": user_text,
@@ -619,7 +872,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                             })
                             
                             # Check if we have pending user audio to store
-                            if hasattr(websocket, '_pending_user_audio'):
+                            if active_sessions[session_id].get("audio_consent") and hasattr(websocket, '_pending_user_audio'):
                                 audio_data = websocket._pending_user_audio
                                 audio_base64 = base64.b64encode(audio_data).decode('utf-8')
                                 sequence = len(conversation_data[session_id]["audio_segments"])
@@ -631,12 +884,36 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                     "timestamp": timestamp,
                                     "sequence": sequence
                                 })
-                                logger.info(f"Stored user audio segment {sequence} for text: '{user_text}' at {timestamp}")
+                                logger.info("Stored consented audio segment %s", sequence)
                                 delattr(websocket, '_pending_user_audio')
                         
                         # Process with dialog engine
+                        if message_id and data.get("expects_audio") is True and dialog.consent == "accepted" and load_outcome(session_id).get("audio_consent"):
+                            dialog.audio_turns[message_id] = datetime.now(timezone.utc).isoformat()
                         response_data = await dialog.process_user_response(user_text)
-                        logger.info(f"Dialog response: {response_data}")
+                        if message_id and response_data.get("type") != "error":
+                            dialog.turn_receipts[message_id] = {**response_data, "_request_digest": request_digest}
+                        state = dialog.terminal_state or ("in_progress" if dialog.consent == "accepted" else "awaiting_consent")
+                        try:
+                            record_progress(session_id, dialog, state=state)
+                        except Exception:
+                            logger.exception("Session persistence failed")
+                            if response_data.get("type") in ("emergency", "emergency_alert"):
+                                await websocket.send_json({"type": "emergency_alert", "state": "escalated", "saved": False,
+                                    "message": dialog.policy["messages"]["emergency"] + " This report could not be saved."})
+                            else:
+                                await websocket.send_json({"type": "error", "message": "Your answer could not be saved. Please contact the care team directly if you need help."})
+                            break
+                        if (message_id and data.get("request_receipt") is True
+                                and response_data.get("next_action") != "end_session"
+                                and response_data.get("type") != "completion" and not dialog.is_complete()):
+                            await websocket.send_json({"type": "answer_receipt", "message_id": message_id,
+                                "saved": True, "consent": dialog.consent, "answer_context": _answer_context(dialog)})
+                        if response_data.get("next_action") == "end_session" and response_data.get("type") != "completion":
+                            terminal_type = "emergency_alert" if response_data.get("type") in ("emergency", "emergency_alert") else "session_ended"
+                            await websocket.send_json({"type": terminal_type, "text": response_data.get("message"), "message": response_data.get("message"), "state": state, "saved": True, "message_id": message_id})
+                            break
+                        logger.info("Dialog response type: %s", response_data.get("type"))
                         response = response_data.get("message", "I understand. Let me continue with the next question.")
                         response_type = response_data.get("type", "response")
                         progress = response_data.get("progress", 0)
@@ -645,7 +922,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                         logger.info(f"Checking completion: dialog.is_complete()={dialog.is_complete()}, response_type='{response_type}'")
                         if dialog.is_complete() or response_type == "completion":
                             logger.info("Conversation completed, triggering completion handler")
-                            await handleConversationComplete(session_id, websocket)
+                            await handleConversationComplete(session_id, websocket, message_id=message_id)
                             break
                         
                         # Check if WebSocket is still open before sending response
@@ -664,7 +941,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                     
                                     # Store audio segment with sequence number
                                     if session_id in conversation_data:
-                                        timestamp = datetime.now().isoformat()
+                                        timestamp = datetime.now(timezone.utc).isoformat()
                                         sequence = len(conversation_data[session_id]["audio_segments"])
                                         conversation_data[session_id]["audio_segments"].append({
                                             "type": "bot",
@@ -677,14 +954,15 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                         conversation_data[session_id]["transcript"].append({
                                             "speaker": "bot",
                                             "text": response,
-                                            "timestamp": datetime.now().isoformat()
+                                            "timestamp": datetime.now(timezone.utc).isoformat()
                                         })
                                     
                                     await websocket.send_text(json.dumps({
                                         "type": "audio",
                                         "text": response,
                                         "audio_data": audio_base64,
-                                        "progress": progress
+                                        "progress": progress,
+                                        "consent": dialog.consent
                                     }))
                                 except Exception as e:
                                     logger.error(f"TTS failed: {e}")
@@ -692,14 +970,16 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                         "type": "response",
                                         "text": response,
                                         "status": "denial",
-                                        "progress": progress
+                                        "progress": progress,
+                                        "consent": dialog.consent
                                     }))
                             else:
                                 await websocket.send_text(json.dumps({
                                     "type": "response",
                                     "text": response,
                                     "status": "denial",
-                                    "progress": progress
+                                    "progress": progress,
+                                    "consent": dialog.consent
                                 }))
                             
                             # Wait for denial message to finish playing
@@ -715,7 +995,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                         
                                         # Store audio segment with sequence number
                                         if session_id in conversation_data:
-                                            timestamp = datetime.now().isoformat()
+                                            timestamp = datetime.now(timezone.utc).isoformat()
                                             sequence = len(conversation_data[session_id]["audio_segments"])
                                             conversation_data[session_id]["audio_segments"].append({
                                                 "type": "bot",
@@ -728,14 +1008,15 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                             conversation_data[session_id]["transcript"].append({
                                                 "speaker": "bot",
                                                 "text": next_question,
-                                                "timestamp": datetime.now().isoformat()
+                                                "timestamp": datetime.now(timezone.utc).isoformat()
                                             })
                                         
                                         await websocket.send_text(json.dumps({
                                             "type": "audio",
                                             "text": next_question,
                                             "audio_data": audio_base64,
-                                            "progress": progress
+                                            "progress": progress,
+                                            "consent": dialog.consent
                                         }))
                                     except Exception as e:
                                         logger.error(f"TTS failed for next question: {e}")
@@ -743,14 +1024,16 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                             "type": "response",
                                             "text": next_question,
                                             "status": "question",
-                                            "progress": progress
+                                            "progress": progress,
+                                            "consent": dialog.consent
                                         }))
                                 else:
                                     await websocket.send_text(json.dumps({
                                         "type": "response",
                                         "text": next_question,
                                         "status": "question",
-                                        "progress": progress
+                                        "progress": progress,
+                                        "consent": dialog.consent
                                     }))
                         else:
                             # Regular response
@@ -762,7 +1045,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                     
                                     # Store audio segment with sequence number
                                     if session_id in conversation_data:
-                                        timestamp = datetime.now().isoformat()
+                                        timestamp = datetime.now(timezone.utc).isoformat()
                                         sequence = len(conversation_data[session_id]["audio_segments"])
                                         conversation_data[session_id]["audio_segments"].append({
                                             "type": "bot",
@@ -775,14 +1058,15 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                         conversation_data[session_id]["transcript"].append({
                                             "speaker": "bot",
                                             "text": response,
-                                            "timestamp": datetime.now().isoformat()
+                                            "timestamp": datetime.now(timezone.utc).isoformat()
                                         })
                                     
                                     await websocket.send_text(json.dumps({
                                         "type": "audio",
                                         "text": response,
                                         "audio_data": audio_base64,
-                                        "progress": progress
+                                        "progress": progress,
+                                        "consent": dialog.consent
                                     }))
                                 except Exception as e:
                                     logger.error(f"TTS failed: {e}")
@@ -790,14 +1074,16 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                                         "type": "response",
                                         "text": response,
                                         "status": "received",
-                                        "progress": progress
+                                        "progress": progress,
+                                        "consent": dialog.consent
                                     }))
                             else:
                                 await websocket.send_text(json.dumps({
                                     "type": "response",
                                     "text": response,
                                     "status": "received",
-                                    "progress": progress
+                                    "progress": progress,
+                                    "consent": dialog.consent
                                 }))
                     
                 except asyncio.TimeoutError:
@@ -827,6 +1113,12 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
         if session_id in websocket_connections:
             del websocket_connections[session_id]
         if session_id in active_sessions:
+            try:
+                existing = load_outcome(session_id)
+                if existing.get("state") not in {"completed", "declined", "withdrawn", "escalated"}:
+                    record_progress(session_id, active_sessions[session_id]["dialog"], state="interrupted")
+            except Exception:
+                logger.exception("Could not persist interrupted-session status")
             del active_sessions[session_id]
         # Keep conversation_data for download purposes - don't delete it immediately
 
@@ -877,11 +1169,17 @@ async def set_session_urgency(session_id: str, request: UrgencyRequest):
     automatic red-flag routing (which is handled independently by the flagging
     layer). Returns the accepted value.
     """
+    if not outcome_exists(session_id):
+        raise HTTPException(404, "Unknown session")
+    if load_outcome(session_id).get("consent") != "accepted":
+        raise HTTPException(409, "Consent is required before saving urgency")
     try:
         role = request.role
         if role is None and session_id in active_sessions:
             role = active_sessions[session_id].get("role")
         record = record_user_urgency(session_id, request.urgency, role=role)
+        if session_id in active_sessions:
+            active_sessions[session_id]["dialog"].user_urgency = record["user_reported_urgency"]
         return {
             "session_id": session_id,
             "user_reported_urgency": record["user_reported_urgency"],
@@ -915,6 +1213,8 @@ async def post_reminder(session_id: str, request: ReminderRequest):
 async def get_clinician_summary(session_id: str):
     """A.11 — concise, prioritized clinician summary (flags + urgency first;
     routine items grouped for collapsing; DRAFT role routing attached)."""
+    if not outcome_exists(session_id):
+        raise HTTPException(status_code=404, detail="No outcome exists for this session")
     try:
         record = load_outcome(session_id)
         return build_clinician_summary(record)
@@ -959,7 +1259,10 @@ async def get_resource_regions():
 
 
 class AskRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=4000)
+    session_id: Optional[str] = None
+    share_with_team: bool = False
+    callback_requested: bool = False
 
 
 @app.post("/api/ask")
@@ -981,10 +1284,22 @@ async def ask_vera(request: AskRequest):
     # 1) Safety: never chat past a red flag described in the question.
     result = flag_evaluate(q)
     tier = result.get("overall_tier")
+    saved = False
+    saved_summary = None
+    if request.share_with_team and request.session_id:
+        try:
+            record = record_ask(request.session_id, q, result["flags"], load_policy(), request.callback_requested)
+            saved_summary = build_clinician_summary(record)
+            saved = True
+        except Exception:
+            # A storage outage must not suppress already-known safety guidance.
+            logger.exception("Ask outcome was not saved")
+    receipt = {"saved": saved, "session_id": request.session_id if saved else None,
+               "summary": saved_summary}
     if tier == 1:
-        return {"kind": "emergency", "answer": result.get("guidance"), "tier": 1}
+        return {"kind": "emergency", "answer": result.get("guidance"), "tier": 1, **receipt}
     if tier == 2:
-        return {"kind": "urgent", "answer": result.get("guidance"), "tier": 2}
+        return {"kind": "urgent", "answer": result.get("guidance"), "tier": 2, **receipt}
 
     # 2) Clinician-approved answer, verbatim.
     hit = faq_service.lookup(q)
@@ -994,10 +1309,11 @@ async def ask_vera(request: AskRequest):
             "answer": hit.get("answer"),
             "disclaimer": faq_service.disclaimer(),
             "topic": hit.get("id"),
+            **receipt,
         }
 
     # 3) Refuse anything not approved.
-    return {"kind": "refusal", "answer": faq_service.REFUSAL}
+    return {"kind": "refusal", "answer": faq_service.REFUSAL, **receipt}
 
 
 # Friendly, role-neutral labels for the patient-facing scenario picker.
@@ -1025,9 +1341,13 @@ def resolve_scenario_file(scenario_arg: str, role: str) -> Optional[str]:
     otherwise falls back to <base>_survivor.yml, then <base>.yml.
     """
     sdir = Path(__file__).parent.parent / "scenarios"
+    if not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.yml)?", scenario_arg):
+        return None
     role_n = normalize_role(role)
     stem = scenario_arg[:-4] if scenario_arg.endswith(".yml") else scenario_arg
     base = _scenario_base(stem)
+    if role_n == "caregiver" and base == "rag_enhanced":
+        return None  # no reviewed caregiver RAG script; use guided instead
     candidates = []
     if role_n != "survivor":
         candidates.append(f"{base}_{role_n}.yml")
@@ -1115,46 +1435,11 @@ async def test_tts(request: dict):
         return {"error": f"TTS failed: {str(e)}"}
 
 def build_response_time_message(cfg: dict, priority: bool = False) -> str:
-    """Build the configurable response-time expectation message (A.2).
-
-    Driven by config['response_expectations'] so each deployment can set its own
-    timeframe and urgent instructions without code changes.
-
-    When `priority` is True (a Tier-1/Tier-2 flag fired, or the patient marked the
-    check-in urgent), the routine "not watched in real time / reply within N
-    business days" wording is SUPPRESSED — telling a patient who just reported
-    red-flag stroke symptoms to expect a reply in 2 business days is unsafe and
-    contradictory. Instead we surface the urgent/911 instruction only.
-
-    # ===== DRAFT CLINICAL LOGIC — REQUIRES DR. ZAND SIGN-OFF =====
-    # Rationale: focus group (Laura) feared an unmonitored inbox; set expectations
-    #   plainly and always route urgent issues to a human / 911. The priority
-    #   branch ensures the routine timeframe is never read back on a flagged call.
-    # Source: focus group June 2026.
-    # DO NOT treat the timeframe or urgent wording as clinically validated.
-    """
-    re_cfg = (cfg or {}).get("response_expectations", {}) or {}
-    urgent = re_cfg.get(
-        "urgent_instructions",
-        "For anything urgent, call your care team. If it is an emergency, call 911.",
-    )
-    if priority:
-        # No routine timeframe and no "not watched in real time" line on a flagged
-        # call — only the escalation instruction.
-        return re_cfg.get(
-            "priority_instructions",
-            f"Because of what you told me, a member of your care team will be "
-            f"notified to follow up. {urgent}",
-        )
-    days = re_cfg.get("routine_response_business_days", 2)
-    not_realtime = "" if re_cfg.get("monitored_real_time", False) else \
-        "This check-in is not watched in real time. "
-    plural = "day" if days == 1 else "days"
-    return f"{not_realtime}For routine questions, expect a reply within {days} business {plural}. {urgent}"
-    # ===== END DRAFT CLINICAL LOGIC =====
+    """Compatibility wrapper; legacy config must not resurrect unsupported promises."""
+    return response_message(load_policy(), priority=priority)
 
 
-async def handleConversationComplete(session_id: str, websocket: WebSocket):
+async def handleConversationComplete(session_id: str, websocket: WebSocket, message_id: str | None = None):
     """Handle conversation completion"""
     try:
         logger.info(f"Handling conversation completion for session {session_id}")
@@ -1179,16 +1464,23 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                 is_priority = False
             try:
                 outcome = load_outcome(session_id)
-                if (outcome or {}).get("user_reported_urgency") == "urgent":
+                if (outcome or {}).get("user_reported_urgency") in {"soon", "urgent", "unsure"} or (outcome or {}).get("callback_requested"):
                     is_priority = True
             except Exception:
                 pass
         else:
             wrapup_message = "Thank you for your time. A member of our care team will review your responses."
 
+        # Persist BEFORE acknowledgement; do not promise a staffed response time.
+        if session_id in active_sessions:
+            dialog = active_sessions[session_id]["dialog"]
+            record_progress(session_id, dialog, state="completed")
+            wrapup_message = "Thank you. Your check-in answers have been saved."
+            response_time_message = response_message(dialog.policy, priority=is_priority)
+        else:
+            raise RuntimeError("Cannot complete a missing session")
         # A.2: append the configurable response-time expectation to the spoken wrapup,
         # and send it as a separate field so the UI can show it on-screen too.
-        response_time_message = build_response_time_message(config, priority=is_priority)
         wrapup_message = f"{wrapup_message} {response_time_message}"
 
         logger.info(f"Wrapup message: {wrapup_message}")
@@ -1205,7 +1497,7 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                 
                 # Store final audio segment with sequence number
                 if session_id in conversation_data:
-                    timestamp = datetime.now().isoformat()
+                    timestamp = datetime.now(timezone.utc).isoformat()
                     sequence = len(conversation_data[session_id]["audio_segments"])
                     conversation_data[session_id]["audio_segments"].append({
                         "type": "bot",
@@ -1218,11 +1510,11 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
                     conversation_data[session_id]["transcript"].append({
                         "speaker": "bot",
                         "text": wrapup_message,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     })
                 
                 await websocket.send_text(json.dumps({
-                    "type": "completion",
+                    "type": "completion", "saved": True, "message_id": message_id,
                     "response_time_message": response_time_message,
                     "text": wrapup_message,
                     "audio_data": audio_base64,
@@ -1231,14 +1523,14 @@ async def handleConversationComplete(session_id: str, websocket: WebSocket):
             except Exception as e:
                 logger.error(f"TTS failed for completion: {e}")
                 await websocket.send_text(json.dumps({
-                    "type": "completion",
+                    "type": "completion", "saved": True, "message_id": message_id,
                     "response_time_message": response_time_message,
                     "text": wrapup_message,
                     "progress": 100.0
                 }))
         else:
             await websocket.send_text(json.dumps({
-                "type": "completion",
+                "type": "completion", "saved": True, "message_id": message_id,
                 "text": wrapup_message,
                 "progress": 100.0
             }))
@@ -1546,7 +1838,7 @@ async def cleanup_conversation_data():
     try:
         # Keep only recent sessions (last 24 hours)
         from datetime import datetime, timedelta
-        cutoff_time = datetime.now() - timedelta(hours=24)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
         
         sessions_to_remove = []
         for session_id, data in conversation_data.items():

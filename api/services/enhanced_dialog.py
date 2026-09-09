@@ -7,13 +7,16 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Any, Tuple
 import yaml
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+import re
 
 from .prompt_guidelines import assistant_guidelines, is_boilerplate_only
 from .roles import normalize_role, greeting_framing, prompt_framing
 from . import flagging
 from .empathy import acknowledge as empathy_ack
+from .clinical_policy import load_policy
+from . import faq
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +36,40 @@ class EnhancedDialog:
         self.patient_context = patient_context
         # C.3 — flags accumulated across the session (highest severity wins).
         self.flags = []
+        self.policy = load_policy()
+        self.consent = "pending"
+        self.terminal_state = None
+        self.user_urgency = None
+        self.callback_requested = False
+        self.followup = None
+        self.active_pathway = None
+        self.turn_receipts = {}
+        self.audio_turns = {}
+        self.transcription_reviews = []
+        self.stroke_type = "unknown"
         
         # Load scenario
         self.scenario = self._load_scenario(scenario_path)
+        # Do not assume ischemic stroke or conflate answer consent with audio.
+        for question in self.scenario.get("flow", []):
+            if question.get("key") == "consent":
+                question["prompt"] = self.policy["messages"]["consent"]
+            if question.get("key") == "know_ischemic":
+                question["prompt"] = "Would you like a short explanation of stroke?"
+                question["on_deny"] = "That's okay."
+            if question.get("key") == "urgency_self_report":
+                question["prompt"] = self.policy["messages"]["urgency_choices"]
+        if self.role == "caregiver":
+            flow = self.scenario.get("flow", [])
+            urgency_index = next((i for i, q in enumerate(flow) if q.get("key") == "urgency_self_report"), len(flow))
+            flow.insert(urgency_index, {"key": "caregiver_support", "type": "free", "prompt": self.policy["messages"]["caregiver_support"]})
         self.mode = self.scenario.get("meta", {}).get("mode", "guided")
         
         # Dialog state
         self.current_index = 0
         self.responses = {}
         self.session_context = {
-            "start_time": datetime.now().isoformat(),
+            "start_time": datetime.now(timezone.utc).isoformat(),
             "recovery_stage": "early",  # early, mid, late
             "risk_level": "low",  # low, medium, high
             "emergency_detected": False
@@ -61,39 +88,44 @@ class EnhancedDialog:
             return {"meta": {"mode": "guided"}, "flow": []}
     
     def build_greeting(self) -> str:
-        """Build personalized greeting"""
-        try:
-            template = self.scenario.get("greeting", {}).get("template", "")
-            variables = self.scenario.get("greeting", {}).get("variables", [])
-            
-            # Compute time of day
-            hour = datetime.now().hour
-            if hour < 12:
-                timeofday = "morning"
-            elif hour < 17:
-                timeofday = "afternoon"
-            else:
-                timeofday = "evening"
-            
-            # Replace variables
-            greeting = template.format(
-                timeofday=timeofday,
-                honorific=self.honorific,
-                patient_name=self.patient_name,
-                organization=self.scenario.get("meta", {}).get("organization", ""),
-                site=self.scenario.get("meta", {}).get("site", "")
-            )
+        """Short introduction without inferring a person's stroke type."""
+        return self.policy["messages"]["introduction"]
 
-            # A.6 — append role framing (caregiver/clinician); clinical content unchanged.
-            framing = greeting_framing(self.role)
-            if framing:
-                greeting = f"{greeting.rstrip()} {framing}"
+    def snapshot(self):
+        """JSON-only state; keep the exact policy and question flow on reconnect."""
+        fields = ("honorific", "patient_name", "role", "empathy", "flags", "policy", "consent",
+                  "terminal_state", "user_urgency", "callback_requested", "followup", "active_pathway",
+                  "turn_receipts", "audio_turns", "transcription_reviews", "stroke_type", "scenario", "mode",
+                  "current_index", "responses", "session_context")
+        return {"schema_version": 1, "state": {key: getattr(self, key) for key in fields},
+                "patient_context": self.patient_context.to_dict() if self.patient_context else None}
 
-            return greeting
-        except Exception as e:
-            logger.error(f"Failed to build greeting: {e}")
-            return "Hello! I'm your AI stroke navigator. How are you feeling today?"
-    
+    @classmethod
+    def restore(cls, snapshot, openai=None, search=None, cache=None):
+        from .patient_data import PatientContext
+        if snapshot.get("schema_version") != 1:
+            raise ValueError("Unsupported saved conversation")
+        state = snapshot["state"]
+        # Do not silently run old clinical settings through changed detection code.
+        if state["policy"]["engine_digest"] != load_policy()["engine_digest"]:
+            raise ValueError("Clinical engine changed; a new check-in is required")
+        if not 0 <= state["current_index"] <= len(state["scenario"]["flow"]):
+            raise ValueError("Invalid saved question position")
+        restored = cls.__new__(cls)
+        restored.__dict__.update(state)
+        restored.openai, restored.search, restored.cache = openai, search, cache
+        restored.patient_context = PatientContext(**snapshot["patient_context"]) if snapshot.get("patient_context") else None
+        return restored
+
+    def current_prompt(self):
+        if self.followup:
+            branch = self.policy["symptom_followups"].get("pathways", {}).get(self.active_pathway, {})
+            timing = self.followup == self.policy["symptom_followups"]["max_questions"]
+            return branch.get("timing_prompt" if timing else "impact_prompt",
+                              self.policy["messages"]["symptom_timing" if timing else "symptom_impact"])
+        question = self.get_current_question()
+        return question["prompt"] if question else "Your check-in answers are saved."
+
     def get_current_question(self) -> Optional[Dict]:
         """Get current question from flow"""
         try:
@@ -153,15 +185,66 @@ class EnhancedDialog:
     async def process_user_response(self, user_input: str, confidence: float = 0.0) -> Dict:
         """Process user response and generate next action"""
         try:
+            if self.terminal_state:
+                return {"type": "session_ended", "state": self.terminal_state, "next_action": "end_session", "message": "This check-in has ended."}
             current_question = self.get_current_question()
             if not current_question:
                 return await self._handle_completion()
+
+            if current_question.get("key") == "consent":
+                # Consent is processed BEFORE recording any clinical response.
+                return await self._handle_confirm_response(user_input, current_question)
+            if self.consent != "accepted":
+                return {"type": "clarification", "message": self.policy["messages"]["consent"]}
+            normalized = user_input.lower().strip().rstrip(".!?")
+            if normalized in {"stop", "stop the check-in", "end check-in", "withdraw consent"}:
+                self.terminal_state = "withdrawn"
+                return {"type": "session_ended", "state": "withdrawn", "next_action": "end_session", "message": "The check-in has stopped. Answers already shared remain saved; contact the study team about deletion."}
+            # Safety precedes FAQ detours and all symptom clarification.
+            self._accumulate_flags(user_input)
+            if self.followup and self.active_pathway:
+                self._evaluate_pathway_answer(user_input)
+            if self.overall_tier() == 1:
+                return self._emergency_stop(user_input)
+            if normalized in {"call me", "call back", "callback", "speak to a person", "talk to a person", "human help"}:
+                self.callback_requested = True
+                return {"type": "response", "message": self.policy["messages"]["callback"] + " " + self.current_prompt()}
+            if normalized in {"repeat", "repeat that", "replay"}:
+                return {"type": "question", "message": self.current_prompt()}
+            if normalized in {"skip", "skip this question"}:
+                self.responses[current_question["key"]] = {"skipped": True}
+                self.followup = None
+                self.active_pathway = None
+                return await self._handle_free_response(user_input, current_question)
+            if normalized in {"my stroke was hemorrhagic", "my stroke was ischemic", "i don't know my stroke type"}:
+                self.stroke_type = "hemorrhagic" if "hemorrhagic" in normalized else "ischemic" if "ischemic" in normalized else "unknown"
+                self.responses["stroke_type_correction"] = {"type": self.stroke_type, "source": "respondent"}
+                return {"type": "response", "message": self.policy["education"][self.stroke_type] + " " + self.current_prompt()}
+            if user_input.strip().endswith("?") and current_question.get("key") != "urgency_self_report":
+                hit = faq.lookup(user_input)
+                return {"type": "response", "message": (hit["answer"] if hit else faq.REFUSAL) + " Back to the check-in: " + self.current_prompt()}
+            if current_question.get("key") == "urgency_self_report":
+                if normalized in {"not sure", "i don't know", "i am not sure"}:
+                    normalized = "unsure"
+                values = re.findall(r"\b(routine|soon|urgent|unsure)\b", normalized)
+                if len(set(values)) != 1 or re.search(r"\bnot\b", normalized):
+                    return {"type": "clarification", "message": self.policy["messages"]["urgency_choices"]}
+                self.user_urgency = values[0]
+            if self.followup:
+                self.responses.setdefault(current_question["key"] + "_details", []).append(user_input)
+                self.followup -= 1
+                if self.followup:
+                    pathway = self.policy["symptom_followups"].get("pathways", {}).get(self.active_pathway, {})
+                    return {"type": "question", "message": pathway.get("impact_prompt", self.policy["messages"]["symptom_impact"])}
+                self.followup = None
+                self.active_pathway = None
+                return await self._handle_free_response(user_input, current_question)
             
             # Store user response
             self.responses[current_question["key"]] = {
                 "text": user_input,
                 "confidence": confidence,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
             # Update session context
@@ -169,8 +252,20 @@ class EnhancedDialog:
 
             # C.3 — evaluate flags on the patient's words and accumulate (skip the
             # consent confirm step). Tier-1 is independent of context/urgency (B.4).
-            if current_question.get("key") != "consent":
-                self._accumulate_flags(user_input)
+            followups = self.policy["symptom_followups"]
+            if followups["enabled"] and current_question.get("key") in followups["question_keys"] and followups["max_questions"]:
+                # Only clear negative/no-change answers skip the clarification.
+                if normalized not in {"no", "none", "no new symptoms", "no changes", "fine", "good", "same", "unchanged"}:
+                    self.followup = followups["max_questions"]
+                    pathways = followups.get("pathways", {})
+                    self.active_pathway = next((name for name, branch in pathways.items()
+                        if any(re.search(r"\b" + re.escape(term) + r"\b", normalized) for term in branch["triggers"])), None)
+                    branch = pathways.get(self.active_pathway, {})
+                    if self.active_pathway:
+                        self._evaluate_pathway_answer(user_input)
+                        if self.overall_tier() == 1:
+                            return self._emergency_stop(user_input)
+                    return {"type": "question", "message": branch.get("timing_prompt", self.policy["messages"]["symptom_timing"])}
 
             # Process based on mode and question type
             if self.mode == "rag_enhanced" and current_question.get("type") != "confirm":
@@ -201,7 +296,7 @@ class EnhancedDialog:
         """Process response in guided mode (original behavior)"""
         try:
             question_type = current_question.get("type", "free")
-            logger.info(f"Processing guided response: user_input='{user_input}', question_type='{question_type}', current_question={current_question}")
+            logger.info("Processing guided question type: %s", question_type)
             
             if question_type == "confirm":
                 return await self._handle_confirm_response(user_input, current_question)
@@ -305,21 +400,26 @@ class EnhancedDialog:
         """Handle yes/no confirmation responses"""
         try:
             # Simple pattern matching for yes/no
-            user_lower = user_input.lower()
-            yes_patterns = ["yes", "yeah", "yep", "i consent", "ok", "okay", "sure", "agree"]
-            no_patterns = ["no", "don't", "decline", "disagree", "not", "refuse"]
-            
-            is_yes = any(pattern in user_lower for pattern in yes_patterns)
-            is_no = any(pattern in user_lower for pattern in no_patterns)
+            user_lower = user_input.lower().strip().rstrip(".!?")
+            is_yes = user_lower in {"yes", "yeah", "yep", "i consent", "ok", "okay", "sure", "i agree", "yes please"}
+            is_no = user_lower in {"no", "no thanks", "no thank you", "i decline", "i do not consent", "i don't consent", "decline", "not now"}
+            if current_question.get("key") == "consent":
+                if is_no:
+                    self.consent = "declined"
+                    self.terminal_state = "declined"
+                    return {"type": "session_ended", "state": "declined", "message": self.policy["messages"]["declined"], "next_action": "end_session"}
+                if is_yes:
+                    self.consent = "accepted"
             
             if is_yes:
+                education = self.policy["education"].get(self.stroke_type, self.policy["education"]["unknown"]) + " " if current_question.get("key") == "know_ischemic" else ""
                 # Advance to next question
                 if self.advance_to_next():
                     next_question = self.get_current_question()
                     if next_question:
                         return {
                             "type": "question",
-                            "message": next_question["prompt"],
+                            "message": education + next_question["prompt"],
                             "next_action": "wait_for_response",
                             "progress": self.get_progress_percentage()
                         }
@@ -334,9 +434,8 @@ class EnhancedDialog:
                     next_question = self.get_current_question()
                     if next_question:
                         return {
-                            "type": "denial_with_continuation",
-                            "message": on_deny,
-                            "next_question": next_question["prompt"],
+                            "type": "question",
+                            "message": on_deny + " " + next_question["prompt"],
                             "next_action": "wait_for_response",
                             "progress": self.get_progress_percentage()
                         }
@@ -364,7 +463,7 @@ class EnhancedDialog:
     async def _handle_free_response(self, user_input: str, current_question: Dict) -> Dict:
         """Handle free-form text responses"""
         try:
-            logger.info(f"Handling free response: user_input='{user_input}', current_question={current_question}")
+            logger.info("Processing free response for question %s", current_question.get("key"))
             # Advance to next question
             if self.advance_to_next():
                 next_question = self.get_current_question()
@@ -399,6 +498,7 @@ class EnhancedDialog:
     async def _handle_emergency_response(self, user_input: str, context: Dict) -> Dict:
         """Handle emergency detection"""
         try:
+            self.terminal_state = "escalated"
             emergency_message = self.scenario.get("emergency_disclaimer", 
                 "If you are experiencing a medical emergency, please call 911 immediately.")
             
@@ -493,9 +593,34 @@ class EnhancedDialog:
                 if f.get("rule_id") == "t3_routine":
                     continue
                 if not any(e.get("rule_id") == f.get("rule_id") for e in self.flags):
+                    f["detected_at"] = datetime.now(timezone.utc).isoformat()
                     self.flags.append(f)
         except Exception as e:  # pragma: no cover - defensive
             logger.error(f"flag accumulation failed: {e}")
+            raise
+
+    def _evaluate_pathway_answer(self, text):
+        """DRAFT deterministic clarification. Baseline labels never erase flags."""
+        branch = self.policy["symptom_followups"]["pathways"][self.active_pathway]
+        value = text.lower()
+        unknown = bool(re.search(r"\b(unsure|unknown|not sure|don't know|cannot tell)\b", value))
+        baseline = not unknown and bool(re.search(r"\b(unchanged|usual|same|baseline)\b", value))
+        changed = any(re.search(r"\b" + term + r"\b", value) and not flagging._negated_near(value, term) for term in ("new", "worse", "worsening"))
+        label = "unknown" if unknown else "new_or_worse" if changed else "baseline_reported" if baseline else "unclassified"
+        self.responses.setdefault("symptom_clarifications", []).append({"pathway": self.active_pathway, "reported_timing": label, "text": text})
+        immediate = any(re.search(r"\b" + re.escape(term) + r"\b", value) and not flagging._negated_near(value, term) for term in branch["immediate_terms"])
+        tier = 1 if immediate else branch["new_or_worse_tier"] if changed else branch["unknown_tier"] if unknown else None
+        if tier:
+            rule_id = f"pathway_{self.active_pathway}_{label}_{tier}"
+            if not any(flag.get("rule_id") == rule_id for flag in self.flags):
+                self.flags.append({"tier": tier, "rule_id": rule_id, "category": self.active_pathway,
+                    "reason": "DRAFT symptom pathway: " + ("emergency qualifier" if immediate else label),
+                    "matched": text, "detected_at": datetime.now(timezone.utc).isoformat()})
+
+    def _emergency_stop(self, user_input):
+        self.responses.setdefault("safety_reports", []).append(user_input)
+        self.terminal_state = "escalated"
+        return {"type": "emergency_alert", "state": "escalated", "next_action": "end_session", "message": self.policy["messages"]["emergency"]}
 
     def overall_tier(self) -> int:
         """Highest-severity tier across accumulated flags (3 = routine if none)."""
@@ -508,7 +633,7 @@ class EnhancedDialog:
         can fire. Tier-1 always fires from the words alone.
         """
         return flagging.evaluate(user_text, context=self.patient_context,
-                                 user_urgency=user_urgency)
+                                 user_urgency=user_urgency, policy=self.policy)
 
     def _build_rag_system_prompt(self, current_question: Dict, context: Dict) -> str:
         """Build system prompt for RAG responses"""
@@ -545,7 +670,7 @@ class EnhancedDialog:
         """Generate session summary for care team"""
         try:
             return {
-                "session_id": f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "session_id": f"session_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
                 "patient_name": self.patient_name,
                 "honorific": self.honorific,
                 "role": self.role,
@@ -558,7 +683,7 @@ class EnhancedDialog:
                 "overall_tier": self.overall_tier(),       # C.3
                 "context_loaded": self.patient_context is not None,
                 "responses": self.responses,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         except Exception as e:
             logger.error(f"Session summary generation failed: {e}")
@@ -568,7 +693,7 @@ class EnhancedDialog:
         """Calculate session duration in minutes"""
         try:
             start_time = datetime.fromisoformat(self.session_context["start_time"])
-            duration = datetime.now() - start_time
+            duration = datetime.now(timezone.utc) - start_time
             return round(duration.total_seconds() / 60, 2)
         except Exception:
             return 0.0

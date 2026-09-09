@@ -14,6 +14,7 @@ changes. No Azure / network dependencies — safe to import and unit test.
 
 import os
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -47,7 +48,9 @@ def _load_data() -> Dict[str, Any]:
 
 
 def _normalize_region(region: Optional[str]) -> str:
-    return (region or "").strip().lower()
+    value = (region or "").strip().lower()
+    # Only normalize our supported PA aliases; never silently map Monroe, NY.
+    return re.sub(r"(?: county)?(?:,? (?:pa|pennsylvania))?$", "", value).strip()
 
 
 def list_regions() -> List[Dict[str, str]]:
@@ -81,6 +84,9 @@ def lookup_resources(region: Optional[str], need: Optional[str] = None) -> Dict[
         "used_fallback": used_fallback,
         "disclaimer": INFO_ONLY_DISCLAIMER,
         "resources": {},
+        "source_checked_at": data.get("source_checked_at"),
+        "status": data.get("status", "unreviewed"),
+        "coverage_gaps": [],
     }
 
     if need:
@@ -89,8 +95,16 @@ def lookup_resources(region: Optional[str], need: Optional[str] = None) -> Dict[
             result["note"] = f"Unknown need '{need}'. Valid needs: {', '.join(NEED_CATEGORIES)}."
             return result
         result["resources"][n] = block.get(n, [])
+        if not result["resources"][n]:
+            result["coverage_gaps"].append(n)
+            result["resources"][n] = (data.get("default") or {}).get(n, [])
     else:
         for n in NEED_CATEGORIES:
             if block.get(n):
                 result["resources"][n] = block.get(n)
+            else:
+                result["coverage_gaps"].append(n)
+                result["resources"][n] = (data.get("default") or {}).get(n, [])
+    if used_fallback or result["coverage_gaps"]:
+        result["note"] = "Some or all selections have no verified local listing. General next steps are shown; check current availability with the service."
     return result

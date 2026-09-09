@@ -25,7 +25,7 @@ class RedisCacheService:
             key = f"tts:{hash(text)}:{voice}:{rate}"
             cached_audio = await self.redis.get(key)
             if cached_audio:
-                logger.debug(f"Cache hit for TTS: {text[:30]}...")
+                logger.debug("TTS cache hit")
                 return cached_audio
             return None
         except Exception as e:
@@ -37,7 +37,7 @@ class RedisCacheService:
         try:
             key = f"tts:{hash(text)}:{voice}:{rate}"
             await self.redis.setex(key, self.default_ttl, audio_data)
-            logger.debug(f"Cached TTS audio: {text[:30]}...")
+            logger.debug("TTS audio cached")
             return True
         except Exception as e:
             logger.error(f"TTS cache set failed: {e}")
@@ -49,7 +49,7 @@ class RedisCacheService:
             key = f"rag:{hash(user_input)}:{context_hash}"
             cached_response = await self.redis.get(key)
             if cached_response:
-                logger.debug(f"Cache hit for RAG response: {user_input[:30]}...")
+                logger.debug("RAG cache hit")
                 return json.loads(cached_response)
             return None
         except Exception as e:
@@ -61,7 +61,7 @@ class RedisCacheService:
         try:
             key = f"rag:{hash(user_input)}:{context_hash}"
             await self.redis.setex(key, self.default_ttl, json.dumps(response))
-            logger.debug(f"Cached RAG response: {user_input[:30]}...")
+            logger.debug("RAG response cached")
             return True
         except Exception as e:
             logger.error(f"RAG cache set failed: {e}")
@@ -97,7 +97,7 @@ class RedisCacheService:
             key = f"embedding:{hash(text)}"
             cached_embedding = await self.redis.get(key)
             if cached_embedding:
-                logger.debug(f"Cache hit for embedding: {text[:30]}...")
+                logger.debug("Embedding cache hit")
                 return pickle.loads(cached_embedding)
             return None
         except Exception as e:
@@ -109,7 +109,7 @@ class RedisCacheService:
         try:
             key = f"embedding:{hash(text)}"
             await self.redis.setex(key, self.default_ttl * 24, pickle.dumps(embedding))  # Longer TTL for embeddings
-            logger.debug(f"Cached embedding: {text[:30]}...")
+            logger.debug("Embedding cached")
             return True
         except Exception as e:
             logger.error(f"Embedding cache set failed: {e}")
@@ -121,7 +121,7 @@ class RedisCacheService:
             key = f"search:{hash(query)}:{hash(filters or '')}"
             cached_results = await self.redis.get(key)
             if cached_results:
-                logger.debug(f"Cache hit for search: {query[:30]}...")
+                logger.debug("Search cache hit")
                 return pickle.loads(cached_results)
             return None
         except Exception as e:
@@ -133,7 +133,7 @@ class RedisCacheService:
         try:
             key = f"search:{hash(query)}:{hash(filters or '')}"
             await self.redis.setex(key, self.default_ttl, pickle.dumps(results))
-            logger.debug(f"Cached search results: {query[:30]}...")
+            logger.debug("Search results cached")
             return True
         except Exception as e:
             logger.error(f"Search cache set failed: {e}")

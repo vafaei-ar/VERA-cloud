@@ -1,88 +1,75 @@
-# Local resource directory (A.8) — geographic + need lookup.
-#
-# NOTE: This is a SAMPLE curated dataset for the prototype. Entries are illustrative
-# and MUST be verified/maintained by the care team for each region before real use.
-# Resources are presented as INFORMATION ONLY, not an endorsement, and do not imply
-# insurance coverage. Keyed by region (county) -> need category -> list of resources.
-#
-# Need categories: transportation | meals | rehab | devices | support
-#
-# Phil's point: rural McKean County needs different resources than Monroe County
-# (near NYC). A region-specific list is the first version; "default" is the fallback.
-
+# Public source pages checked 2026-09-07; NOT a check of current capacity,
+# eligibility, coverage, or suitability. Navigator review remains required.
+version: "resources-2026-09-07"
+status: "source_checked_pending_local_review"
+source_checked_at: "2026-09-07"
 regions:
-  "mckean":
-    display_name: "McKean County, PA (rural)"
+  mckean:
+    display_name: "McKean County, PA"
     transportation:
-      - name: "Area Transportation Authority of North Central PA (ATA)"
-        description: "Shared-ride and medical transportation in rural north-central PA."
-        contact: "Call ATA for scheduling (verify current number locally)."
-      - name: "Medical Assistance Transportation Program (MATP)"
-        description: "Help getting to medical appointments for eligible residents."
-        contact: "Ask your care team or county assistance office."
+      - name: "Area Transportation Authority (ATA)"
+        description: "Public transportation serving McKean County. Ask about accessible rides, registration, and fares."
+        phone: "866-282-4968"
+        url: "https://www.rideata.com/"
+        contact: "Customer service; confirm your route and eligibility directly."
     meals:
-      - name: "Meals on Wheels (local chapter)"
-        description: "Home-delivered meals for people who cannot easily shop or cook."
-        contact: "Ask your care team for the local chapter."
-    rehab:
-      - name: "Regional outpatient rehabilitation services"
-        description: "Physical, occupational, and speech therapy near McKean County."
-        contact: "Your care team can refer you."
-    devices:
-      - name: "IpsiHand and similar rehab devices"
-        description: "Some hand-recovery devices exist; availability and coverage vary."
-        contact: "Ask your neurologist or therapist whether this fits your situation."
+      - name: "Office of Human Services — nutrition services"
+        description: "Short-term in-home meals may be available to qualifying older adults. A care manager determines eligibility."
+        phone: "800-672-7145"
+        url: "https://ohsaging.com/services"
+        contact: "Ask about nutrition services and any waiting list."
     support:
-      - name: "Regional stroke support group"
-        description: "A group where survivors and caregivers share experiences."
-        contact: "Ask your care team for the nearest group."
-
-  "monroe":
-    display_name: "Monroe County, PA (near NYC metro)"
+      - name: "Office of Human Services — caregiver support"
+        description: "Information and support for eligible caregiving situations in McKean, Cameron, and Elk counties."
+        phone: "800-672-7145"
+        url: "https://ohsaging.com/services"
+        contact: "Ask about eligibility; services are not guaranteed."
+      - name: "American Stroke Association — group finder"
+        description: "Search by ZIP code for survivor and caregiver groups."
+        url: "https://www.stroke.org/en/stroke-support-group-finder"
+        contact: "Confirm meeting dates and access arrangements with the group."
+  monroe:
+    display_name: "Monroe County, PA"
     transportation:
-      - name: "Monroe County Transit Authority (MCTA)"
-        description: "Local bus and shared-ride service, including medical trips."
-        contact: "Contact MCTA for shared-ride scheduling (verify locally)."
-      - name: "Medical Assistance Transportation Program (MATP)"
-        description: "Help getting to medical appointments for eligible residents."
-        contact: "Ask your care team or county assistance office."
+      - name: "Monroe County Transit Authority — shared ride"
+        description: "Registration and eligibility vary by program. Ask which option fits your trip."
+        phone: "570-839-6282"
+        url: "https://www.gomcta.com/sharedRide.php"
+        contact: "For program applications, ask for extension 434. Confirm advance booking requirements."
     meals:
-      - name: "Meals on Wheels (local chapter)"
-        description: "Home-delivered meals for people who cannot easily shop or cook."
-        contact: "Ask your care team for the local chapter."
-    rehab:
-      - name: "Neurosensory / outpatient rehab centers (metro access)"
-        description: "Specialized rehab and neurosensory services within reach of the metro area."
-        contact: "Your care team can refer you."
-    devices:
-      - name: "IpsiHand and similar rehab devices"
-        description: "Some hand-recovery devices exist; availability and coverage vary."
-        contact: "Ask your neurologist or therapist whether this fits your situation."
+      - name: "Monroe County Meals on Wheels"
+        description: "Contact the local program about meal delivery and available services."
+        phone: "570-424-8794"
+        url: "https://monroemeals.org/contact/"
+        contact: "Confirm eligibility, cost, and service availability directly."
     support:
-      - name: "Stroke support groups (regional)"
-        description: "Multiple survivor and caregiver groups in the region."
-        contact: "Ask your care team for options near you."
-
-# Fallback when the region is unknown — national/general resources only.
+      - name: "American Stroke Association — group finder"
+        description: "Search by ZIP code for survivor and caregiver groups."
+        url: "https://www.stroke.org/en/stroke-support-group-finder"
+        contact: "Confirm meeting dates and access arrangements with the group."
+# Do not label unverified providers or devices as local recommendations.
+# Empty local categories produce an explicit coverage gap and general next step.
 default:
-  display_name: "General (no specific region)"
+  display_name: "General resources — no verified local listing"
   transportation:
-    - name: "Medical Assistance Transportation Program (MATP)"
-      description: "State program that helps eligible people get to medical appointments."
-      contact: "Ask your care team or county assistance office."
+    - name: "Transportation support"
+      description: "No local transport listing is available for this selection."
+      contact: "Ask your care team or county assistance office about accessible transport."
   meals:
-    - name: "Meals on Wheels America (find local)"
-      description: "Directory to find home-delivered meal programs near you."
-      contact: "Ask your care team to help you find the local program."
+    - name: "Meals on Wheels America — local provider search"
+      description: "Use your ZIP code to look for a meal program. Eligibility and availability vary."
+      url: "https://www.mealsonwheelsamerica.org/find-meals-and-services/"
+      contact: "Check details with the provider."
   rehab:
-    - name: "Outpatient rehabilitation (via referral)"
-      description: "Physical, occupational, and speech therapy by referral."
-      contact: "Your care team can refer you."
+    - name: "Rehabilitation referral"
+      description: "No verified local rehabilitation listing is available here."
+      contact: "Ask your care team about physical, occupational, or speech therapy and coverage."
   devices:
-    - name: "Assistive / rehab devices"
-      description: "Devices may help with recovery; availability and coverage vary."
-      contact: "Ask your neurologist or therapist."
+    - name: "Assistive-device discussion"
+      description: "This directory does not recommend a particular recovery device."
+      contact: "Discuss needs, suitability, availability, and coverage with your therapist."
   support:
-    - name: "American Stroke Association — support resources"
-      description: "Information and support options for survivors and caregivers."
-      contact: "Ask your care team for help getting connected."
+    - name: "American Stroke Association — group finder"
+      description: "Search for survivor and caregiver groups by ZIP code."
+      url: "https://www.stroke.org/en/stroke-support-group-finder"
+      contact: "Check current meeting details directly with the group."

@@ -8,17 +8,35 @@
 # the entry's `keywords`. Keep answers short, plain-language, non-diagnostic, and
 # never about a specific patient's case.
 
+version: feedback-draft-2026-09-07
+status: draft
 disclaimer: >-
   This is general information, not medical advice. For anything about your own
   health, contact your care team. If this is an emergency, call 911.
 
 entries:
+  - id: cognition
+    keywords: ["memory", "thinking", "concentration", "cognitive", "planning tasks"]
+    source: https://www.stroke.org/en/about-stroke/effects-of-stroke/cognitive-effects
+    answer: >-
+      Stroke can affect memory, concentration, and thinking, even when changes
+      are not visible. Tell your care team which everyday tasks are difficult
+      and ask about support or rehabilitation for those tasks.
+
+  - id: caregiver_support
+    keywords: ["caregiver", "caring for", "care partner"]
+    source: https://www.stroke.org/en/help-and-support/resource-library/lets-talk-about-stroke/being-a-stroke-family-caregiver
+    answer: >-
+      Caregivers need support too. Tell the care team what is difficult for you,
+      and ask about help, training, or a caregiver support group. You do not have
+      to manage every task alone.
+
   - id: what_is_tia
     keywords: ["tia", "mini stroke", "mini-stroke", "transient ischemic"]
     answer: >-
       A TIA (sometimes called a "mini-stroke") is a brief interruption of blood
       flow to the brain. The symptoms go away on their own, but a TIA is an
-      important warning sign — please tell your care team if you think you had one.
+      important warning sign. Call 911 for stroke symptoms, even if they go away.
 
   - id: warning_signs
     keywords: ["warning sign", "be-fast", "befast", "signs of stroke", "another stroke", "spot a stroke"]

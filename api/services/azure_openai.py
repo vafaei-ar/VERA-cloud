@@ -45,7 +45,7 @@ class AzureOpenAIService:
             text = response.text
             confidence = getattr(response, 'confidence', 0.9)  # Whisper doesn't provide confidence
             
-            logger.info(f"Transcribed {len(audio_data)} bytes: {text[:50]}...")
+            logger.info("Transcribed audio (%s bytes); content omitted from logs", len(audio_data))
             return text, confidence
             
         except Exception as e:

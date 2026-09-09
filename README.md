@@ -16,6 +16,10 @@ AI-SoNar is a **bounded, non-diagnostic, human-supervised check-in tool**. Speci
 
 ## 🌟 Features
 
+Session 1/2 changes are on `feat/session-feedback-pipeline`. See
+[the current feedback implementation notes](docs/FEEDBACK_IMPLEMENTATION.md).
+Draft configuration and synthetic tests are not approval for clinical use.
+
 ### Core Capabilities
 - **Voice-First Interface**: Natural conversation flow with AI-powered speech recognition and synthesis
 - **Structured Assessment**: Comprehensive post-stroke follow-up questionnaire covering:
@@ -29,8 +33,8 @@ AI-SoNar is a **bounded, non-diagnostic, human-supervised check-in tool**. Speci
 - **Azure AI Integration**: Powered by Azure OpenAI, Speech Services, and AI Search
 - **Real-time Streaming**: Sub-second ASR and TTS with streaming audio
 - **RAG-Enhanced Conversations**: Context-aware responses using medical knowledge base
-- **Auto-scaling**: Handles 10-100+ concurrent sessions with Azure Container Apps
-- **High Availability**: 99.9% uptime with Azure infrastructure
+- **Deployment scope**: The current durable-dialog implementation supports one worker/replica with persistent storage; horizontal scaling is not validated.
+- **Availability**: No application uptime or clinical response guarantee has been established.
 - **Global Deployment**: Deploy to any Azure region worldwide
 
 ### Conversation Modes
@@ -48,7 +52,7 @@ A tiered flagging engine (`api/services/flagging.py`) evaluates each patient res
 | Tier | Meaning | Behavior |
 |------|---------|----------|
 | **Tier 1 — Red flag** | Stroke warning signs (BE-FAST) + chest pain, loss of consciousness, fall-with-injury | Emergency guidance (call 911) + automatic escalation. **Fires from the patient's words alone**, independent of history and of user-reported urgency. |
-| **Tier 2 — Urgent** | Worsening-but-non-emergent; context-raised using patient history (e.g. anticoagulant + bleeding/fall/missed dose, BP ≥180/120, diabetic glucose symptoms) | Routed for clinician review (same / next business day). Requires patient context; absent in generic mode. |
+| **Tier 2 — Urgent** | Draft phrase, symptom-pathway, and history-dependent rules; some work without patient context | Visible for clinician review; no unverified response-time promise. Thresholds and wording require review. |
 | **Tier 3 — Routine** | Stable, no concerning symptoms | Logged for routine follow-up. |
 
 Patient history is injected as **background only** — used to ask better questions and personalize plain-language information, **never** to diagnose or to read the medical record back to the patient. With no patient ID, the system runs in **generic mode** (no history-dependent flags; Tier-1 still works). User-reported urgency is stored as a **separate, advisory** field and never overrides automatic flagging. Every history access is recorded in an append-only audit log with no clinical content (`api/services/audit.py`).
@@ -232,37 +236,21 @@ VERA-cloud/
    - Deploy Redis instance
    - Configure connection string
 
-## 🎯 Performance Optimizations
+## Performance and deployment limits
 
-### Latency Improvements
-- **ASR**: 2-5s → 200-500ms (90% improvement)
-- **TTS**: 1-3s → 100-300ms (80% improvement)
-- **Model loading**: 30-60s → 0s (100% improvement)
-
-### Scalability Features
-- **Concurrent sessions**: 1-2 → 50+ (2500% improvement)
-- **Auto-scaling**: 1-20 replicas based on demand
-- **Global deployment**: Multi-region support
-
-### Quality Enhancements
-- **ASR accuracy**: Latest Whisper models with Azure optimizations
-- **TTS naturalness**: 400+ neural voices
-- **Context awareness**: RAG-powered medical knowledge
-- **Reliability**: 99.9% uptime SLA
+No current benchmark establishes latency, recognition accuracy, concurrency, or
+availability guarantees. Validate these on the intended deployment. The feedback
+branch uses a single engine worker/replica with persistent outcome/audio storage;
+distributed session ownership and multi-replica recovery are not implemented.
 
 ## 🔒 Security & Compliance
 
-### Data Protection
-- **Encryption at rest**: All data encrypted in Azure
-- **Encryption in transit**: TLS 1.2+ for all communications
-- **Private networking**: VNet integration and private endpoints
-- **Key management**: Azure Key Vault for secrets
-
-### Compliance
-- **HIPAA ready**: Healthcare data protection
-- **SOC 2**: Security and availability controls
-- **ISO 27001**: Information security management
-- **GDPR**: Data privacy and protection
+Service authentication, expiring session credentials, consent boundaries,
+restricted recording playback, and access auditing are implemented. Host-managed
+encryption, HTTPS termination, private networking, secret storage, backups,
+retention, and access policy must be configured and reviewed by the deployment
+owner. This repository does not establish HIPAA/GDPR compliance or SOC 2/ISO 27001
+certification; an Azure service's properties are not application certification.
 
 ## 📊 Monitoring & Observability
 
@@ -280,21 +268,18 @@ VERA-cloud/
 
 ## 🧪 Testing
 
-### Unit Tests
+### Backend regression tests
 ```bash
-pytest tests/unit/ -v
+.venv/bin/python -m pytest -q
 ```
 
-### Integration Tests
+### Paired synthetic integration (from sibling Kura/push-service)
 ```bash
-pytest tests/integration/ -v
+.venv/bin/python tests/integration_pair.py
 ```
 
-### Load Testing
-```bash
-# Test concurrent sessions
-python tests/load_test.py --sessions 50 --duration 300
-```
+Load, deployment, physical-device, and clinical acceptance testing remain release
+gates. See [the current handoff](docs/FEEDBACK_IMPLEMENTATION.md).
 
 ## 🚀 Deployment
 
