@@ -51,7 +51,7 @@ for y, item in zip([0.70, 0.57, 0.44, 0.31, 0.18], by["requirements"]):
 ax.add_patch(FancyArrowPatch((0.45, 0.47), (0.515, 0.47),
                              arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
 
-ax.text(0.5, 0.025, by["key_message"][0],
-        ha="center", va="center", fontsize=12.5, fontweight="bold")
+ax.text(0.5, 0.045, by["key_message"][0],
+        ha="center", va="center", fontsize=11.5, fontweight="bold")
 fig.savefig(OUT, dpi=300, facecolor="white")
 plt.close(fig)
