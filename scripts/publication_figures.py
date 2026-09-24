@@ -68,6 +68,6 @@ for x, txt in zip(rx, reqs):
                                 fill=False, linewidth=1.4))
     ax.text(x, 0.178, txt, ha="center", va="center", fontsize=10.5)
 
-fig.savefig(OUT / "Figure1_Study_Flow.png", dpi=300, bbox_inches="tight")
+ax.text(0.5, 0.045, "*Rural patient group included stroke and other neurologic conditions.",\n        ha="center", va="center", fontsize=9.5)\n\nfig.savefig(OUT / "Figure1_Study_Flow.png", dpi=300, bbox_inches="tight")
 fig.savefig(OUT / "Figure1_Study_Flow.pdf", bbox_inches="tight")
 plt.close(fig)
