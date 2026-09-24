@@ -41,7 +41,7 @@ for y, item in zip([0.70, 0.57, 0.44, 0.31, 0.18], by["requirements"]):
     ax.add_patch(FancyBboxPatch((0.52, y), 0.42, 0.085,
                                boxstyle="round,pad=0.008,rounding_size=0.014",
                                fill=False, linewidth=1.3))
-    ax.text(0.73, y + 0.0425, item, ha="center", va="center", fontsize=11.5, wrap=True)
+    ax.text(0.73, y + 0.0425, item, ha="center", va="center", fontsize=12, wrap=True)
 ax.add_patch(FancyArrowPatch((0.45, 0.47), (0.515, 0.47), arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
 
 ax.text(0.5, 0.025, by["key_message"][0], ha="center", va="center", fontsize=12.5, fontweight="bold")
