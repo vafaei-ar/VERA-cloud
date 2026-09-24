@@ -13,6 +13,8 @@ by = {}
 for row in rows:
     by.setdefault(row["section"], []).append(row["item"])
 
+# Stroke allows no more than 7 inches square. Saving without bbox_inches keeps
+# the output at exactly 7 x 7 inches (2100 x 2100 pixels at 300 dpi).
 fig = plt.figure(figsize=(7, 7))
 ax = fig.add_axes([0, 0, 1, 1])
 ax.set_xlim(0, 1)
@@ -33,17 +35,23 @@ def box(x, y, w, h, title, items):
 box(0.07, 0.64, 0.37, 0.22, "Post-stroke transition", by["poststroke_context"])
 box(0.07, 0.36, 0.37, 0.22, "Iterative co-design", by["codesign"])
 box(0.07, 0.08, 0.37, 0.22, "Bounded clinical role", by["clinical_role"])
-ax.add_patch(FancyArrowPatch((0.255, 0.64), (0.255, 0.585), arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
-ax.add_patch(FancyArrowPatch((0.255, 0.36), (0.255, 0.305), arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
+ax.add_patch(FancyArrowPatch((0.255, 0.64), (0.255, 0.585),
+                             arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
+ax.add_patch(FancyArrowPatch((0.255, 0.36), (0.255, 0.305),
+                             arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
 
-ax.text(0.73, 0.865, "Requirements before pilot", ha="center", va="center", fontsize=14, fontweight="bold")
+ax.text(0.73, 0.865, "Requirements before pilot",
+        ha="center", va="center", fontsize=14, fontweight="bold")
 for y, item in zip([0.70, 0.57, 0.44, 0.31, 0.18], by["requirements"]):
     ax.add_patch(FancyBboxPatch((0.52, y), 0.42, 0.085,
                                boxstyle="round,pad=0.008,rounding_size=0.014",
                                fill=False, linewidth=1.3))
-    ax.text(0.73, y + 0.0425, item, ha="center", va="center", fontsize=12, wrap=True)
-ax.add_patch(FancyArrowPatch((0.45, 0.47), (0.515, 0.47), arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
+    ax.text(0.73, y + 0.0425, item,
+            ha="center", va="center", fontsize=12, wrap=True)
+ax.add_patch(FancyArrowPatch((0.45, 0.47), (0.515, 0.47),
+                             arrowstyle="-|>", mutation_scale=18, linewidth=1.6))
 
-ax.text(0.5, 0.025, by["key_message"][0], ha="center", va="center", fontsize=12.5, fontweight="bold")
-fig.savefig(OUT, dpi=300, bbox_inches="tight", facecolor="white")
+ax.text(0.5, 0.025, by["key_message"][0],
+        ha="center", va="center", fontsize=12.5, fontweight="bold")
+fig.savefig(OUT, dpi=300, facecolor="white")
 plt.close(fig)
