@@ -1,0 +1,16 @@
+section,item
+poststroke_context,Communication limits
+poststroke_context,Caregiver burden
+poststroke_context,Rural access gaps
+codesign,Patients and caregivers
+codesign,Prototype refinement
+codesign,Workflow validation
+requirements,Visible human oversight
+requirements,Communication-aware interaction
+requirements,Caregiver-flexible use
+requirements,Explicit escalation ownership
+requirements,Low-friction multimodal access
+clinical_role,Navigator's assistant
+clinical_role,Not autonomous triage
+clinical_role,Human owns escalation
+key_message,Patient needs may extend beyond the safest initial deployment window
